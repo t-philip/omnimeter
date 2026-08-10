@@ -35,6 +35,7 @@ import sys
 import time
 from pathlib import Path
 
+import requests
 import urllib3
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -147,12 +148,39 @@ def configure_device(role: str, label: str, product_type: str, devices: dict, en
     if not already_configured and not _ask_yes_no(f"Do you have a {label}?"):
         return env_lines
 
+    # This wizard only ever pairs HomeWizard hardware -- everything past this
+    # point (API v2 toggle, TLS cert identity, the button-press pairing
+    # protocol itself) is HomeWizard-specific. Asking it of someone who just
+    # said "yes" to the brand-agnostic "do you have a P1 meter?" question
+    # above was nonsensical for any other brand. Route them to the two
+    # actually-generic paths instead of pretending this one applies.
+    if not _ask_yes_no(f"  Is it a HomeWizard {label}?", default=True):
+        print(
+            f"  This wizard only pairs HomeWizard devices directly -- skipping {label}.\n"
+            "  For any other brand, see the README's \"Live polling from any meter\" (point it at\n"
+            "  a URL + field map, no pairing) or \"Importing from any meter\" (vendor-neutral CSV)\n"
+            "  sections instead.\n"
+        )
+        return env_lines
+
     ip = _ask(f"  {label} IP address")
+    if not ip.strip():
+        print(
+            f"  No IP entered -- skipping {label}. Find it in the HomeWizard app (device ->\n"
+            "  Settings shows its IP) or your router's connected-devices/DHCP list, then rerun\n"
+            "  the wizard.\n"
+        )
+        return env_lines
     v2_prompt = "  Is 'API v2 (experimental)' enabled for this device in the HomeWizard app?"
     protocol = "v2" if _ask_yes_no(v2_prompt, default=True) else "v1"
     token_env = f"OMNIMETER_{role.upper()}_TOKEN"
 
     if protocol == "v1":
+        try:
+            requests.get(f"http://{ip}/api/v1/data", timeout=hwc.DEFAULT_TIMEOUT).raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"  Could not reach {ip}: {e} -- skipping {label}, rerun the wizard once it's reachable.")
+            return env_lines
         serial = _ask(f"  {label} serial (its MAC address, dashes/colons stripped, lowercase)")
         devices[role] = {
             "ip": ip,
@@ -239,7 +267,11 @@ def main() -> int:
 
     ENV_FILE_PATH.write_text("\n".join(env_lines) + "\n")
 
-    print("\nSetup complete. Start OmniMeter with: docker compose up -d")
+    port = _get_env_value(env_lines, "OMNIMETER_PORT") or "8000"
+    print(
+        "\nSetup complete. Start OmniMeter with: docker compose up -d\n"
+        f"Then open http://localhost:{port} -- `docker compose up -d` itself won't tell you that."
+    )
     return 0
 
 

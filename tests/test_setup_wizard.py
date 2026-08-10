@@ -116,12 +116,66 @@ class TestConfigureDevice:
         assert devices["p1"]["ip"] == "REPLACE_ME"
         assert result_env == []
 
-    def test_v1_device_configured_without_pairing(self, monkeypatch):
-        # First _ask_yes_no call = "do you have one" -> True; second = "is v2 enabled" -> False (use v1).
+    def test_declining_homewizard_confirmation_skips_device(self, monkeypatch):
+        # "do you have one" -> True, "is it a HomeWizard" -> False. Must never
+        # reach the IP prompt or the v2 question at all.
         yn_answers = iter([True, False])
+        monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
+        ask_calls = []
+        monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: ask_calls.append(a) or "should-not-be-used")
+
+        devices = self._devices()
+        result_env = wiz.configure_device("p1", "P1 meter", "p1dongle", devices, [])
+
+        assert ask_calls == []  # never asked for an IP
+        assert devices["p1"]["ip"] == "REPLACE_ME"
+        assert result_env == []
+
+    def test_blank_ip_skips_device(self, monkeypatch):
+        # "do you have one" -> True, "is it a HomeWizard" -> True, then a
+        # blank IP answer -- must skip rather than accept an empty address.
+        yn_answers = iter([True, True])
+        monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
+        monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "")
+
+        devices = self._devices()
+        result_env = wiz.configure_device("p1", "P1 meter", "p1dongle", devices, [])
+
+        assert devices["p1"]["ip"] == "REPLACE_ME"
+        assert result_env == []
+
+    def test_v1_unreachable_device_skipped_cleanly(self, monkeypatch):
+        # "do you have one" -> True, "is it a HomeWizard" -> True, "is v2
+        # enabled" -> False (use v1) -- a bad/wrong IP must not be silently
+        # accepted as configured just because v1 has no pairing step.
+        yn_answers = iter([True, True, False])
+        monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
+        monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "198.51.100.89")
+
+        def fake_get(url, timeout):
+            raise wiz.requests.exceptions.ConnectionError("no route to host")
+
+        monkeypatch.setattr(wiz.requests, "get", fake_get)
+
+        devices = self._devices()
+        result_env = wiz.configure_device("watermeter", "Watermeter", "watermeter", devices, [])
+
+        assert devices["watermeter"]["ip"] == "REPLACE_ME"
+        assert result_env == []
+
+    def test_v1_device_configured_without_pairing(self, monkeypatch):
+        # "do you have one" -> True, "is it a HomeWizard" -> True, "is v2
+        # enabled" -> False (use v1).
+        yn_answers = iter([True, True, False])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         inputs = iter(["198.51.100.89", "abc123"])  # ip, then serial
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: next(inputs))
+
+        class _FakeGetResponse:
+            def raise_for_status(self):
+                pass
+
+        monkeypatch.setattr(wiz.requests, "get", lambda url, timeout: _FakeGetResponse())
 
         devices = self._devices()
         result_env = wiz.configure_device("watermeter", "Watermeter", "watermeter", devices, [])
@@ -133,9 +187,9 @@ class TestConfigureDevice:
         assert result_env == []  # no token written for v1
 
     def test_v2_device_paired_and_token_written(self, monkeypatch):
-        # Answers in order: "do you have one" -> True, "is v2 enabled" -> True,
-        # "does identity look right" -> True.
-        yn_answers = iter([True, True, True])
+        # Answers in order: "do you have one" -> True, "is it a HomeWizard" ->
+        # True, "is v2 enabled" -> True, "does identity look right" -> True.
+        yn_answers = iter([True, True, True, True])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "192.0.2.50")
         monkeypatch.setattr(
@@ -154,7 +208,7 @@ class TestConfigureDevice:
         assert wiz._get_env_value(result_env, "OMNIMETER_P1_TOKEN") == "the-real-token"
 
     def test_v2_device_uses_san_over_cn_when_present(self, monkeypatch):
-        yn_answers = iter([True, True, True])
+        yn_answers = iter([True, True, True, True])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "192.0.2.51")
         monkeypatch.setattr(
@@ -180,7 +234,8 @@ class TestConfigureDevice:
         assert devices["battery"]["serial"] == "bbbbbbbbbbbb"
 
     def test_declining_identity_confirmation_skips_device(self, monkeypatch):
-        yn_answers = iter([True, True, False])  # have one -> yes, v2 -> yes, identity ok -> no
+        # have one -> yes, is HomeWizard -> yes, v2 -> yes, identity ok -> no
+        yn_answers = iter([True, True, True, False])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "192.0.2.50")
         monkeypatch.setattr(wiz, "fetch_device_certificate_identity", lambda ip: ("appliance/p1dongle/abc123", []))
@@ -195,7 +250,7 @@ class TestConfigureDevice:
         assert result_env == []
 
     def test_pairing_timeout_leaves_device_unconfigured(self, monkeypatch):
-        yn_answers = iter([True, True, True])
+        yn_answers = iter([True, True, True, True])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "192.0.2.50")
         monkeypatch.setattr(wiz, "fetch_device_certificate_identity", lambda ip: ("appliance/p1dongle/abc123", []))
@@ -213,7 +268,7 @@ class TestConfigureDevice:
         assert result_env == []
 
     def test_unreachable_device_skipped_cleanly(self, monkeypatch):
-        yn_answers = iter([True, True])
+        yn_answers = iter([True, True, True])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: "192.0.2.50")
 
@@ -265,6 +320,20 @@ class TestMain:
         assert "OMNIMETER_WRITE_API_TOKEN=" in env_text
         assert "OMNIMETER_TIMEZONE=UTC" in env_text
         assert "OMNIMETER_BACKUP_HOST_DIR=./backups" in env_text
+
+    def test_final_message_prints_dashboard_url(self, monkeypatch, tmp_path, capsys):
+        # `docker compose up -d` itself never tells the user where to go --
+        # the wizard's closing message is the only place that can.
+        monkeypatch.setattr(wiz.hwc, "DEVICES_CONFIG_PATH", tmp_path / "devices.json")
+        env_path = tmp_path / ".env"
+        env_path.write_text("OMNIMETER_PORT=9090\n")
+        monkeypatch.setattr(wiz, "ENV_FILE_PATH", env_path)
+        monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: False)
+        monkeypatch.setattr(wiz, "_ask", lambda prompt, default="": default)
+
+        wiz.main()
+
+        assert "http://localhost:9090" in capsys.readouterr().out
 
     def test_rerun_does_not_regenerate_existing_write_token(self, monkeypatch, tmp_path):
         devices_path = tmp_path / "devices.json"
