@@ -25,4 +25,8 @@ RUN mkdir -p data && chown -R omnimeter:omnimeter /opt/omnimeter
 
 USER omnimeter
 
-CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:8000", "wsgi:app"]
+# --no-control-socket: gunicorn's runtime control-socket feature defaults to
+# $HOME/.gunicorn/, but the omnimeter user above has no home directory --
+# every fresh `docker compose up -d` logged a startup "Permission denied"
+# error otherwise. Nothing here uses gunicornc, so disable it outright.
+CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:8000", "--no-control-socket", "wsgi:app"]
