@@ -313,11 +313,21 @@ def category_import_enabled(conn: sqlite3.Connection, category: str) -> bool:
 
 
 def ingest_file(conn: sqlite3.Connection, path: Path) -> int:
-    """Ingest a single CSV. Returns rows written (0 if skipped as unchanged,
-    unrecognized, or disabled for this category in Settings). Safe to re-run:
-    unchanged files (same content hash) are skipped; changed files (e.g.
-    re-exporting a wider date range) are fully re-ingested via INSERT
-    OR REPLACE, keyed by timestamp.
+    """Ingest a single CSV. Returns rows written (0 if skipped as unchanged
+    or disabled for this category in Settings). Raises ValueError for a
+    filename that matches no known format -- this used to return 0 here too,
+    silently: a file with perfectly valid columns but a typo'd/missing
+    filename prefix produced no error and no log line anywhere, contradicting
+    the README's "judged against the HomeWizard format and rejected"
+    (rejected implies feedback; the old behavior gave none). Callers that
+    already know the category (app.py's upload route checks before ever
+    calling this) never hit this branch, so no existing behavior changes for
+    them -- this only starts surfacing what scan_and_ingest's dropzone scan
+    used to swallow.
+
+    Safe to re-run: unchanged files (same content hash) are skipped; changed
+    files (e.g. re-exporting a wider date range) are fully re-ingested via
+    INSERT OR REPLACE, keyed by timestamp.
 
     The toggle check lives here (not just in app.py's upload route) since
     this is the single choke point both the web upload and
@@ -326,7 +336,11 @@ def ingest_file(conn: sqlite3.Connection, path: Path) -> int:
     re-enabled just because a file already sits in the dropzone."""
     category = detect_category(path.name)
     if category is None:
-        return 0
+        raise ValueError(
+            f"unrecognized filename {path.name!r} -- expected either a Bat-/P1e-/P1g-/Water- "
+            "prefixed HomeWizard export, or a vendor-neutral "
+            "'omnimeter-<power|gas|water|battery>-<name>.csv' file"
+        )
     if not category_import_enabled(conn, category):
         return 0
 
@@ -389,7 +403,16 @@ def scan_and_ingest(conn: sqlite3.Connection, imports_dir: Path) -> tuple[dict[s
     Returns ({filename: rows_ingested}, {filename: error}) — one malformed
     file must not block the rest of the dropzone (or every later run), so
     each file's failure is captured and the scan continues. The caller is
-    responsible for reporting errors loudly (non-zero exit -> alerting)."""
+    responsible for reporting errors loudly (non-zero exit -> alerting).
+
+    A file that raises is moved to imports_dir/failed/, mirroring
+    app.py's api_import_csv() upload route (same reasoning, quoted from
+    there): "a file that crashes ingest would otherwise be retried (and
+    fail) on every 15-min timer run from now on." That comment described
+    exactly this function's own prior behavior -- the move was only ever
+    wired up for the web upload path, so a file dropped straight into the
+    dropzone (the documented self-hosted method) re-failed identically,
+    forever, with no way to acknowledge it short of deleting it by hand."""
     summary: dict[str, int] = {}
     errors: dict[str, str] = {}
     if not imports_dir.is_dir():
@@ -399,7 +422,10 @@ def scan_and_ingest(conn: sqlite3.Connection, imports_dir: Path) -> tuple[dict[s
             count = ingest_file(conn, path)
         except Exception as e:  # noqa: BLE001 — deliberate poison-pill isolation
             conn.rollback()
-            errors[path.name] = f"{type(e).__name__}: {e}"
+            failed_dir = imports_dir / "failed"
+            failed_dir.mkdir(parents=True, exist_ok=True)
+            path.rename(failed_dir / path.name)
+            errors[path.name] = f"{type(e).__name__}: {e} -- moved to {failed_dir.name}/, not retried"
             continue
         if count:
             summary[path.name] = count

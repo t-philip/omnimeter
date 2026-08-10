@@ -116,7 +116,12 @@ class TestIngestFile:
         second = ingest.ingest_file(conn, path)
         assert second == 2
 
-    def test_unrecognized_file_is_skipped(self, tmp_path):
+    def test_unrecognized_file_raises_instead_of_silently_skipping(self, tmp_path):
+        # Used to return 0 here with zero indication anywhere that the file
+        # was ever seen -- a real gap given the README frames this as
+        # "judged against the HomeWizard format and rejected" (rejected
+        # implies feedback). Now raises, so scan_and_ingest's caller
+        # (ingest_cli.py) reports it and moves it to failed/.
         import sqlite3
 
         from src import db
@@ -126,7 +131,8 @@ class TestIngestFile:
         db.init_db(conn)
 
         path = self._write_csv(tmp_path, "unknown.csv", "a,b\n1,2\n")
-        assert ingest.ingest_file(conn, path) == 0
+        with pytest.raises(ValueError, match="unrecognized filename"):
+            ingest.ingest_file(conn, path)
 
     def test_header_drift_raises_instead_of_silently_ingesting_nothing(self, tmp_path):
         # A renamed/missing column must not "succeed" with 0 usable
@@ -198,6 +204,57 @@ class TestScanAndIngest:
         summary, errors = ingest.scan_and_ingest(conn, tmp_path)
         assert summary == {"Water-good.csv": 2}
         assert "Bat-bad.csv" in errors
+
+    def test_failing_file_moved_to_failed_dir_not_retried_forever(self, tmp_path):
+        # Mirrors app.py's api_import_csv() upload route, which already does
+        # this and says why: "a file that crashes ingest would otherwise be
+        # retried (and fail) on every 15-min timer run from now on." That
+        # was true here too until this test's fix -- a dropzone file (as
+        # opposed to a web upload) just sat in place and re-failed every
+        # cycle, forever, with no way to acknowledge it short of deleting it.
+        import sqlite3
+
+        from src import db
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        db.init_db(conn)
+
+        self._write_csv(tmp_path, "Bat-bad.csv", "time,Import kWh\nnot-a-timestamp,1.0\nalso-bad,2.0\n")
+
+        summary, errors = ingest.scan_and_ingest(conn, tmp_path)
+        assert summary == {}
+        assert "Bat-bad.csv" in errors
+        assert "moved to failed/" in errors["Bat-bad.csv"]
+        assert not (tmp_path / "Bat-bad.csv").exists()
+        assert (tmp_path / "failed" / "Bat-bad.csv").exists()
+
+        # And it must not be retried on the next scan -- it's gone from the
+        # dropzone, not re-discovered from failed/.
+        summary2, errors2 = ingest.scan_and_ingest(conn, tmp_path)
+        assert summary2 == {}
+        assert errors2 == {}
+
+    def test_unrecognized_filename_reported_and_moved_not_silently_skipped(self, tmp_path):
+        # The gap this whole round of testing was chasing: a CSV with
+        # perfectly valid columns but a filename matching no known pattern
+        # used to vanish with zero trace anywhere -- no error, no log line,
+        # "no new or changed files" printed as if the dropzone were empty.
+        import sqlite3
+
+        from src import db
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        db.init_db(conn)
+
+        self._write_csv(tmp_path, "wrong-prefix-test.csv", "time,import_t1_kwh\n2026-01-01 00:00,100\n")
+
+        summary, errors = ingest.scan_and_ingest(conn, tmp_path)
+        assert summary == {}
+        assert "wrong-prefix-test.csv" in errors
+        assert "unrecognized filename" in errors["wrong-prefix-test.csv"]
+        assert (tmp_path / "failed" / "wrong-prefix-test.csv").exists()
 
     def test_no_errors_when_all_files_valid(self, tmp_path):
         import sqlite3
