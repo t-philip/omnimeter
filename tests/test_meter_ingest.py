@@ -175,6 +175,25 @@ class TestIngestAll:
         assert results["battery"] == "skipped: device not configured (unpaired, or no token set)"
         assert results["p1"] == "ok"
 
+    def test_unrecognized_device_name_is_reported_not_silently_dropped(self, monkeypatch):
+        # A device whose name isn't in _DEVICE_TARGETS has nowhere to write --
+        # this used to just `continue` with no trace anywhere (the bug that
+        # let devices.json.generic.example ship "water" instead of
+        # "watermeter" and silently discard every reading). It must now show
+        # up in the results dict, not vanish.
+        import types
+
+        conn = _conn()
+        bogus = types.SimpleNamespace(name="water")
+        monkeypatch.setattr(hwc, "fetch_measurement", lambda device_name, token: {"energy_import_kwh": 1.0})
+        monkeypatch.setattr(hwc, "fetch_measurement_v1", lambda device_name: {"total_liter_m3": 1.0})
+
+        results = api_ingest.ingest_all(conn, [bogus, *hwc.all_devices()])
+
+        assert "water" in results
+        assert results["water"].startswith("config_error:")
+        assert "watermeter" in results["water"]  # names the valid keys, not just "it failed"
+
     def test_one_device_auth_error_does_not_block_others(self, monkeypatch):
         conn = _conn()
         monkeypatch.setattr(

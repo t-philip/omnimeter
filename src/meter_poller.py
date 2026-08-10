@@ -27,7 +27,6 @@ import sys
 import time
 
 from . import aggregate, db, device_registry
-from . import homewizard_api_client as hwc
 from . import meter_ingest as api_ingest
 
 POLL_INTERVAL_SECONDS = 20  # comfortably above HomeWizard's 500ms rate-limit floor
@@ -60,6 +59,8 @@ def _log_results(results: dict[str, str]) -> None:
             log.error("%s: %s", device_name, status)
         elif status.startswith("connection_error"):
             log.warning("%s: %s", device_name, status)
+        elif status.startswith("config_error"):
+            log.warning("%s: %s", device_name, status)
         else:
             log.info("%s: %s", device_name, status)
 
@@ -68,8 +69,17 @@ def main() -> int:
     conn = db.get_connection()
     db.init_db(conn)
 
-    configured = hwc.configured_devices()
-    not_configured = [n for n in hwc.DEVICES if n not in configured]
+    # Vendor-neutral on purpose, via each device's own is_configured() --
+    # hwc.configured_devices() assumes every devices.json entry is
+    # HomeWizard-shaped (ip/serial) and crashes with a bare KeyError on a
+    # generic_json entry. That assumption stopped holding the moment a
+    # generic device could legitimately sit in the same file (setup_wizard.py
+    # now writes one when the user isn't on HomeWizard), so this startup
+    # summary needs to read the same device list the polling loop below
+    # actually uses, not hwc's own HomeWizard-only registry.
+    startup_devices = device_registry.build_devices()
+    configured = [d.name for d in startup_devices if d.is_configured()]
+    not_configured = [d.name for d in startup_devices if not d.is_configured()]
     log.info(
         "omnimeter-api-ingest starting, poll interval=%ss, configured=%s, not_configured=%s",
         POLL_INTERVAL_SECONDS,

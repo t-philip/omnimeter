@@ -41,6 +41,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from src import homewizard_api_client as hwc
+from src.meter_ingest import _DEVICE_TARGETS
 
 ENV_FILE_PATH = Path("/opt/omnimeter/.env")
 PAIR_TIMEOUT_SECONDS = 180
@@ -152,14 +153,27 @@ def configure_device(role: str, label: str, product_type: str, devices: dict, en
     # point (API v2 toggle, TLS cert identity, the button-press pairing
     # protocol itself) is HomeWizard-specific. Asking it of someone who just
     # said "yes" to the brand-agnostic "do you have a P1 meter?" question
-    # above was nonsensical for any other brand. Route them to the two
-    # actually-generic paths instead of pretending this one applies.
+    # above was nonsensical for any other brand. Rather than just pointing at
+    # docs and leaving devices.json untouched, write a ready-to-edit
+    # generic_json stub under this exact role -- field names come from
+    # _DEVICE_TARGETS itself (the same table ingest_all() reads), so this
+    # can never drift out of sync with what the poller actually expects, the
+    # way devices.json.generic.example's hand-copied "water" key once did
+    # (silently discarded every reading -- see meter_ingest.py's own
+    # _DEVICE_TARGETS comment).
     if not _ask_yes_no(f"  Is it a HomeWizard {label}?", default=True):
+        _, _, columns = _DEVICE_TARGETS[role]
+        devices[role] = {
+            "protocol": "generic_json",
+            "url": "REPLACE_ME",
+            "token_env": None,
+            "field_map": {col: "REPLACE_ME" for col in columns},
+        }
         print(
-            f"  This wizard only pairs HomeWizard devices directly -- skipping {label}.\n"
-            "  For any other brand, see the README's \"Live polling from any meter\" (point it at\n"
-            "  a URL + field map, no pairing) or \"Importing from any meter\" (vendor-neutral CSV)\n"
-            "  sections instead.\n"
+            f"  Not HomeWizard -- added a generic live-polling starter for {label} to devices.json\n"
+            f"  under \"{role}\" instead of pairing. Edit its url and field_map values (README's\n"
+            "  \"Live polling from any meter\"), or ignore/delete this entry and use \"Importing from\n"
+            "  any meter\" (vendor-neutral CSV) instead if you'd rather import files than poll live.\n"
         )
         return env_lines
 

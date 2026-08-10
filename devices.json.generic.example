@@ -33,7 +33,7 @@
 
   "_comment_gas": "Gas is often reported by the electricity meter rather than a device of its own -- point this url at the same endpoint as p1 if so. If it arrives inside an array, address it like 'external.0.value'.",
 
-  "water": {
+  "watermeter": {
     "protocol": "generic_json",
     "url": "http://REPLACE_ME/api/v1/data",
     "token_env": null,
@@ -42,7 +42,7 @@
     }
   },
 
-  "_comment_water": "water_usage_dl is a CUMULATIVE total in deciliters (1 m3 = 10000 dl), not per-period usage.",
+  "_comment_watermeter": "water_usage_dl is a CUMULATIVE total in deciliters (1 m3 = 10000 dl), not per-period usage.",
 
   "battery": {
     "protocol": "generic_json",

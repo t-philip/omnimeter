@@ -116,19 +116,27 @@ class TestConfigureDevice:
         assert devices["p1"]["ip"] == "REPLACE_ME"
         assert result_env == []
 
-    def test_declining_homewizard_confirmation_skips_device(self, monkeypatch):
+    def test_declining_homewizard_confirmation_writes_generic_stub(self, monkeypatch):
         # "do you have one" -> True, "is it a HomeWizard" -> False. Must never
-        # reach the IP prompt or the v2 question at all.
+        # reach the IP prompt or the v2 question -- and must leave something
+        # actually usable behind, not just a doc pointer (a "go read the
+        # README" message was the original complaint here: it left the user
+        # with nothing to act on, and the README's own example for this had
+        # its own bug -- see test_meter_ingest.py's config_error coverage).
         yn_answers = iter([True, False])
         monkeypatch.setattr(wiz, "_ask_yes_no", lambda *a, **kw: next(yn_answers))
         ask_calls = []
         monkeypatch.setattr(wiz, "_ask", lambda *a, **kw: ask_calls.append(a) or "should-not-be-used")
 
         devices = self._devices()
-        result_env = wiz.configure_device("p1", "P1 meter", "p1dongle", devices, [])
+        result_env = wiz.configure_device("watermeter", "Watermeter", "watermeter", devices, [])
 
         assert ask_calls == []  # never asked for an IP
-        assert devices["p1"]["ip"] == "REPLACE_ME"
+        assert devices["watermeter"]["protocol"] == "generic_json"
+        assert devices["watermeter"]["url"] == "REPLACE_ME"
+        # Field names come from _DEVICE_TARGETS itself, not hand-typed, so
+        # they can't drift out of sync the way the shipped example once did.
+        assert devices["watermeter"]["field_map"] == {"water_usage_dl": "REPLACE_ME"}
         assert result_env == []
 
     def test_blank_ip_skips_device(self, monkeypatch):

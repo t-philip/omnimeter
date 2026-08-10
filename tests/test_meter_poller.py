@@ -71,6 +71,32 @@ class TestMainTogglesGate:
         assert called == [1]
         assert (tmp_path / "test.db").exists()
 
+    def test_starts_fine_with_a_generic_json_device_present(self, env, monkeypatch, tmp_path):
+        # setup_wizard.py now writes a generic_json stub for any role the
+        # user declines HomeWizard on, so devices.json can legitimately mix
+        # HomeWizard and generic entries. The old startup summary called
+        # hwc.configured_devices(), which assumes every DEVICES entry has
+        # ip/serial keys and raised a bare KeyError on a generic_json one --
+        # this reproduces that shape and must not crash.
+        monkeypatch.setenv("OMNIMETER_DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setitem(
+            hwc.DEVICES,
+            "watermeter",
+            {"protocol": "generic_json", "url": "REPLACE_ME", "token_env": None, "field_map": {}},
+        )
+
+        called = []
+        monkeypatch.setattr(cli.api_ingest, "ingest_all", lambda *a, **kw: called.append(1) or {})
+
+        def sleep_then_stop(_):
+            raise _StopLoop
+
+        monkeypatch.setattr(cli.time, "sleep", sleep_then_stop)
+
+        with pytest.raises(_StopLoop):
+            cli.main()
+        assert called == [1]
+
     def test_passes_one_device_per_registry_entry_regardless_of_readiness(self, env, monkeypatch):
         # No token env vars are set here, so none of the v2 devices are
         # actually "ready" -- main() must still construct and pass a device

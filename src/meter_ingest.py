@@ -194,17 +194,32 @@ def _write_row(conn, table: str, columns: tuple[str, ...], row: dict, time_str: 
 
 def ingest_all(conn, devices: Sequence[MeterDevice]) -> dict[str, str]:
     """devices: one MeterDevice per source to poll -- vendor-agnostic.
-    Only devices with an entry in _DEVICE_TARGETS have anywhere to
-    write a measurement to, so any other device is silently skipped here.
-    Returns {device_name: status}, status one of 'ok',
+    Only devices with an entry in _DEVICE_TARGETS have anywhere to write a
+    measurement to; a name outside that table is reported, not silently
+    dropped (see the config_error branch below). Returns {device_name:
+    status}, status one of 'ok',
     'skipped: device not configured (unpaired, or no token set)',
-    'auth_error: ...', or 'connection_error: ...' -- one device's failure is
-    captured here and never raises past this function, so the caller keeps
-    polling the rest."""
+    'auth_error: ...', 'connection_error: ...', or 'config_error: ...' --
+    one device's failure is captured here and never raises past this
+    function, so the caller keeps polling the rest."""
     time_str = _now_local()
     results: dict[str, str] = {}
     for device in devices:
         if device.name not in _DEVICE_TARGETS:
+            # A device that made it this far already passed
+            # device_registry.build_devices() -- it has a recognized
+            # protocol and is a real, constructed MeterDevice. Landing here
+            # with a name outside _DEVICE_TARGETS is always a devices.json
+            # authoring mistake (a typo'd key, most likely), never a
+            # legitimate no-op -- unlike build_devices()'s own skip of
+            # non-dict "_comment" entries, which never reach here at all.
+            # Surfacing it is the whole point: devices.json.generic.example
+            # once shipped "water" instead of "watermeter" and every reading
+            # was silently discarded with no error anywhere.
+            results[device.name] = (
+                f"config_error: device name {device.name!r} has no destination table -- "
+                f"expected one of {sorted(_DEVICE_TARGETS)}, check devices.json"
+            )
             continue
         mapper, table, columns = _DEVICE_TARGETS[device.name]
         if not device.is_configured():

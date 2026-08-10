@@ -266,10 +266,20 @@ class TestNonDeviceEntriesIgnored:
         import json
         from pathlib import Path
 
+        from src.meter_ingest import _DEVICE_TARGETS
+
         path = Path(__file__).resolve().parent.parent / "devices.json.generic.example"
         config = json.loads(path.read_text(encoding="utf-8"))
         devices = device_registry.build_devices(config)
         # Every real entry is generic_json and unconfigured (REPLACE_ME url),
         # so the file is safe to copy verbatim: nothing polls until edited.
-        assert {d.name for d in devices} == {"p1", "gas", "water", "battery"}
+        assert {d.name for d in devices} == {"p1", "gas", "watermeter", "battery"}
         assert all(not d.is_configured() for d in devices)
+        # Building successfully is not enough -- a device whose name isn't in
+        # _DEVICE_TARGETS has nowhere to write and is silently dropped by
+        # ingest_all() with no error at all (see its own docstring). This is
+        # exactly the check that would have caught devices.json.generic.example
+        # shipping "water" instead of "watermeter": it built fine and looked
+        # configured, but every reading was discarded with zero indication
+        # anything was wrong.
+        assert {d.name for d in devices} <= set(_DEVICE_TARGETS)
