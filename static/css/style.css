@@ -1,0 +1,1241 @@
+/* OmniMeter dashboard — validated dataviz color palette (validated reference instance). */
+
+:root {
+  --surface-1: #fcfcfb;
+  --page-plane: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+
+  --series-power-import: #2a78d6;   /* blue   — slot 1 */
+  --series-power-export: #1baf7a;   /* aqua   — slot 2 */
+  --series-gas: #eda100;            /* yellow — slot 3 */
+  --series-water: #008300;          /* green  — slot 4 */
+  --series-battery-charge: #4a3aa7; /* violet — slot 5 */
+  --series-battery-discharge: #e34948; /* red — slot 6 */
+  --series-battery-soc: #e87ba4;    /* magenta — slot 7 */
+  --series-estimate: #eb6834;       /* orange — slot 8, estimated/self-sufficiency */
+  /* Annotation, not a data series -- same class as --series-occupancy
+     below. Validated with the dataviz palette checker against the colours it
+     actually sits beside on Self-Sufficiency: vs --series-estimate #eb6834,
+     normal-vision dE 21.0 and CVD dE 11.1, both PASS. NOTE: Phase 3's chart
+     overlay will sit near --series-occupancy and MUST be re-validated against
+     it before shipping -- warm neutrals collide with that slate. */
+  --series-weather-sun: #7a5f3a;
+  --series-occupancy: #6b7785;      /* slate — annotation only, not a data series; deliberately desaturated so occupancy overlay bands read as context, not another line/bar competing with the 8 above */
+  /* Overview Sankey's Load node -- a derived residual, not a
+     measured series (see aggregate.energy_flow_matrix), so it gets the
+     same desaturated-annotation treatment as --series-occupancy rather
+     than a 9th competing hue. Validated with the palette checker against
+     its actual Sankey neighbours (Battery charge #4a3aa7, Grid out
+     #1baf7a): normal-vision dE 21.0/17.1+, CVD dE 16.8+, both PASS; only
+     fails the chroma floor, same accepted exception as --series-occupancy.
+     NOTE: the Sankey's source column is ordered Solar/Grid-in/Battery-
+     discharge specifically (not Solar/Battery/Grid-in as in the reference
+     image) -- Solar (#eb6834) vs Battery-discharge (#e34948) fails the
+     palette checker outright (normal-vision dE 7.1, below the 15 hard
+     floor) when adjacent, so Grid-in sits between them instead. Any future
+     reordering of that column must be re-validated. */
+  --series-load: #746a5e;
+
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-danger: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #1a1a19;
+    --page-plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+
+    --series-power-import: #3987e5;
+    --series-power-export: #199e70;
+    --series-gas: #c98500;
+    --series-water: #008300;
+    --series-battery-charge: #9085e9;
+    --series-battery-discharge: #e66767;
+    --series-battery-soc: #d55181;
+    --series-estimate: #d95926;
+    --series-weather-sun: #c9a86a; /* dark step; vs #d95926 dE 17.5 PASS */
+    --series-occupancy: #8b96a3;
+    --series-load: #8a7d70; /* dark step; validated in-band (L 0.48-0.67) */
+
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-danger: #c0392b;
+  }
+}
+
+/* Manual theme override (persisted via localStorage, see dashboard.js
+   initThemeControls) — higher specificity than the prefers-color-scheme
+   media query above, so it wins regardless of OS setting once the user picks
+   one explicitly. */
+:root[data-theme="dark"] {
+  --surface-1: #1a1a19;
+  --page-plane: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+
+  --series-power-import: #3987e5;
+  --series-power-export: #199e70;
+  --series-gas: #c98500;
+  --series-water: #008300;
+  --series-battery-charge: #9085e9;
+  --series-battery-discharge: #e66767;
+  --series-battery-soc: #d55181;
+  --series-estimate: #d95926;
+  --series-weather-sun: #c9a86a;
+  --series-occupancy: #8b96a3;
+  --series-load: #8a7d70;
+}
+
+:root[data-theme="light"] {
+  --surface-1: #fcfcfb;
+  --page-plane: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+
+  --series-power-import: #2a78d6;
+  --series-power-export: #1baf7a;
+  --series-gas: #eda100;
+  --series-water: #008300;
+  --series-battery-charge: #4a3aa7;
+  --series-battery-discharge: #e34948;
+  --series-battery-soc: #e87ba4;
+  --series-estimate: #eb6834;
+  --series-weather-sun: #7a5f3a;
+  --series-occupancy: #6b7785;
+  --series-load: #746a5e;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  font-size: 16px; /* overridden inline by dashboard.js per the font-size stepper */
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page-plane);
+  color: var(--text-primary);
+}
+
+header {
+  padding: 20px 24px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+header h1 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+
+header p.subtitle {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.last-refreshed {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.header-controls button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.header-controls button:hover {
+  color: var(--text-primary);
+  border-color: var(--series-power-import);
+}
+
+nav.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--gridline);
+  padding: 0 24px;
+  flex-wrap: wrap;
+}
+
+nav.tabs button {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+nav.tabs button.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--series-power-import);
+  font-weight: 600;
+}
+
+/* Below ~600px, wrapping the 9 tabs to 3 rows pushes all content down before
+   anything is visible -- scroll horizontally in one row instead. */
+@media (max-width: 599px) {
+  nav.tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  nav.tabs button {
+    flex: 0 0 auto;
+  }
+
+  header {
+    flex-wrap: wrap;
+  }
+
+  .header-right {
+    flex-shrink: 1;
+    width: 100%;
+  }
+
+  .last-refreshed {
+    white-space: normal;
+  }
+}
+
+main {
+  padding: 20px 24px 40px;
+  max-width: 1100px;
+}
+
+.app-footer {
+  padding: 16px 24px 24px;
+  max-width: 1100px;
+  border-top: 1px solid var(--gridline);
+}
+
+.app-footer p {
+  margin: 12px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.app-footer a {
+  color: var(--text-secondary);
+}
+
+.app-footer code {
+  font-size: 0.78rem;
+}
+
+.panel {
+  display: none;
+}
+
+.panel.active {
+  display: block;
+}
+
+/* Second-level tabs within a panel (Import, Settings) -- same active/hidden
+   mechanism as nav.tabs/.panel above, styled as a visually secondary strip
+   (pills, not an underline) so the two levels read as different ranks. */
+.subtabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.subtabs button {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-1);
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.subtabs button.active {
+  color: var(--text-primary);
+  border-color: var(--series-power-import);
+  font-weight: 600;
+}
+
+.subpanel {
+  display: none;
+}
+
+.subpanel.active {
+  display: block;
+}
+
+@media (max-width: 599px) {
+  .subtabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .subtabs button {
+    flex: 0 0 auto;
+  }
+}
+
+.range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.range-presets, .range-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-controls button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.range-controls .preset-btn.active {
+  color: var(--text-primary);
+  border-color: var(--series-power-import);
+  font-weight: 600;
+}
+
+.range-custom {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.range-custom input[type="date"] {
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+}
+
+.range-nav-btn {
+  padding: 6px 9px;
+  font-weight: 700;
+}
+
+.range-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat-tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  /* Grid rows already give same-row tiles equal height; without this, a
+     tile whose label wraps to two lines pushes its value down relative to
+     a tile with a short one-line label in the same row (Costs tab: "Power
+     cost, selected period" vs. "Total, avg/day"). Bottom-aligning the value
+     regardless of label length fixes it dashboard-wide, not just Costs. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.stat-tile .label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.stat-tile .value {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.stat-tile .value.estimated::after {
+  content: " (est.)";
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--series-estimate);
+}
+
+.stat-tile .note {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.stat-tile .note.stale {
+  color: var(--status-warning);
+  font-weight: 600;
+}
+
+.chart-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.chart-card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.chart-card h4 {
+  margin: 14px 0 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.chart-card canvas {
+  max-height: 320px;
+}
+
+/* ---- Per-series toggle switches (charts with 2+ lines/bars) ---- */
+.chart-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gridline);
+}
+
+.chart-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.chart-toggle.is-off {
+  color: var(--text-muted);
+}
+
+.chart-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 16px;
+  flex: none;
+}
+
+.chart-toggle-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.chart-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--baseline);
+  border-radius: 999px;
+  pointer-events: none;
+  transition: background-color 0.15s ease;
+}
+
+.chart-toggle-slider::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  transition: transform 0.15s ease;
+}
+
+.chart-toggle-switch input:checked + .chart-toggle-slider {
+  background: var(--toggle-color, var(--text-secondary));
+}
+
+.chart-toggle-switch input:checked + .chart-toggle-slider::before {
+  transform: translateX(14px);
+}
+
+/* ---- Chart header + period-average annotation ---- */
+.chart-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 12px;
+}
+
+.chart-card-header h3 {
+  margin: 0;
+}
+
+.chart-avg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.chart-avg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.chart-avg-item .swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.chart-avg-item strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.badge-estimated {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--series-estimate);
+  border: 1px solid var(--series-estimate);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 8px;
+}
+
+.empty-state {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed var(--baseline);
+  border-radius: 8px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+
+/* Energy distribution + Energy flow paired deliberately unevenly: the
+   Sankey needs real width for its labels ("Battery discharge" etc.) to stay
+   legible -- an even 2-column split (dashboard-grid above) crushed it to
+   ~420px and made the text tiny. Energy distribution is a simple compact
+   diagram that reads fine narrower, so it gets the smaller share. */
+.overview-flow-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) 1fr;
+  gap: 20px;
+  /* stretch (not start): match Energy distribution's card
+     height to Energy flow's taller one, so its diagram (redesigned with a
+     taller viewBox + bigger circles/font to fill that height, not just
+     blank space) reads at a comparable size instead of looking shrunk. */
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+
+.overview-flow-grid .chart-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-flow-grid .chart-card > div:last-child {
+  flex: 1;
+}
+
+@media (max-width: 799px) {
+  .overview-flow-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Sources table (swatch + label + right-aligned value) ---- */
+table.sources-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+table.sources-table td {
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--gridline);
+  font-variant-numeric: tabular-nums;
+}
+
+table.sources-table td.swatch-cell {
+  width: 14px;
+}
+
+table.sources-table .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+table.sources-table td.value-cell {
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+table.sources-table td.value-cell.value-warn {
+  color: var(--status-warning);
+  font-weight: 600;
+}
+
+/* ---- findings detail list (acknowledge/delete) + gap-fix hint ---- */
+button.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--series-power-import);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+  margin: 6px 0;
+}
+
+/* Findings are rendered as a filterable table (see renderFindingsDetail):
+   with hundreds of consumption notes across four categories and five years,
+   a flat list is neither readable nor actionable. */
+.findings-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 6px;
+  font-size: 0.85rem;
+}
+
+.findings-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.findings-filters select,
+.findings-filters input[type="date"] {
+  font-size: 0.8rem;
+  padding: 3px 6px;
+}
+
+/* Always states how much the active filters are hiding, so a narrowed view
+   can't be mistaken for the full picture. */
+.findings-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+p.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Bulk acknowledge sits between the count line and the table, so the
+   "N shown" it acts on is read immediately above it. Wraps rather than
+   shrinking -- the labels carry the counts and must stay legible. */
+.findings-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+table.findings-table tr.acknowledged {
+  opacity: 0.55;
+}
+
+/* The only column allowed to wrap -- everything else is short enough that
+   nowrap keeps the columns aligned. */
+table.findings-table td.finding-detail-cell {
+  white-space: normal;
+  min-width: 240px;
+}
+
+table.findings-table td.finding-actions {
+  white-space: nowrap;
+}
+
+table.findings-table td.finding-actions button {
+  font-size: 0.78rem;
+  padding: 3px 8px;
+}
+
+table.findings-table td.finding-actions button + button {
+  margin-left: 6px;
+}
+
+table.findings-table td.finding-actions button.delete-reading {
+  color: var(--status-danger);
+  border-color: var(--status-danger);
+}
+
+.fix-hint {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--status-warning) 15%, transparent);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+@keyframes card-flash {
+  0%, 100% { box-shadow: none; }
+  30% { box-shadow: 0 0 0 3px var(--status-warning); }
+}
+
+.chart-card.flash-highlight {
+  animation: card-flash 1.4s ease-out;
+}
+
+table.sources-table tr.total-row td {
+  border-bottom: none;
+  border-top: 1px solid var(--baseline);
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-top: 10px;
+}
+
+table.hl-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.78rem;
+  padding: 4px 4px 6px;
+}
+
+/* Every value column right-aligns to match .value-cell's own text-align --
+   generalized to n+3 (not a fixed count) since different hl-table instances
+   have different numbers of value columns (Highest/Lowest is 2, Comparison
+   is 4: Period A/B + deltas). */
+table.hl-table th:nth-child(n + 3) {
+  text-align: right;
+}
+
+.comparison-periods {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.comparison-period {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.comparison-period h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.comparison-period label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.comparison-period input[type="date"] {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+/* Direction only, not good/bad -- whether "up" is desirable depends on the
+   metric (more import is worse, more export is better, headcount is neutral
+   context), so red/green value-judgment coloring would be wrong for half
+   these rows. Both variants share one neutral, slightly bolder treatment;
+   only the arrow glyph differs. */
+.delta-up,
+.delta-down {
+  font-weight: 600;
+}
+
+/* ---- Simplified energy flow diagram ---- */
+.energy-flow {
+  display: block;
+  /* height:100% (not auto): fills its flex parent, which .overview-flow-grid
+     stretches to match Energy flow's card height side by side (>=800px).
+     The diagram's own viewBox was redesigned to a taller aspect + bigger
+     circles/font (see flowNode/renderEnergyFlow in dashboard.js) so it uses
+     that height rather than centering with blank space above/below.
+     max-width caps it below 800px, where .overview-flow-grid stacks to a
+     single column and this card is no longer width-constrained by its
+     sibling -- without the cap it re-balloons to the full card width (the
+     exact bug this same rule fixed once already, see the git history), and
+     with .chart-card now a flex column, height:100% would otherwise resolve
+     against an auto-height ancestor and blow up further still. */
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  margin: 0 auto;
+}
+
+@media (max-width: 799px) {
+  .energy-flow {
+    height: auto;
+  }
+}
+
+.chart-hint {
+  margin: -6px 0 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.energy-flow .flow-node circle {
+  fill: var(--surface-1);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.energy-flow .flow-node text.flow-icon-label {
+  /* 20px, not 11px: the viewBox was narrowed alongside this (320->280
+     width) specifically to raise the real on-screen scale factor, and the
+     taller redesigned layout (see renderEnergyFlow) gives circles/labels
+     room to grow into -- together they bring this in line with the
+     Sankey's ~15-16px real label size instead of ~10px. */
+  font-size: 16px;
+  fill: var(--text-muted);
+  text-anchor: middle;
+}
+
+.energy-flow .flow-node text.flow-value {
+  font-size: 17px;
+  font-weight: 600;
+  fill: var(--text-primary);
+  text-anchor: middle;
+}
+
+.energy-flow .flow-node text.flow-value.value-up { fill: var(--series-power-export); }
+.energy-flow .flow-node text.flow-value.value-down { fill: var(--series-power-import); }
+
+.energy-flow .flow-line {
+  fill: none;
+  stroke-width: 3.5;
+}
+
+/* ---- Proportional Sankey-style energy flow ---- */
+.sankey-flow {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sankey-ribbon {
+  stroke: none;
+}
+
+.sankey-node {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.sankey-label {
+  font-size: 11px;
+  fill: var(--text-muted);
+  dominant-baseline: middle;
+}
+
+.sankey-value {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--text-primary);
+  dominant-baseline: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+table.data-table th,
+table.data-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--gridline);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+table.data-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  background: var(--surface-1);
+}
+
+/* Caps long tables to ~10 data rows (header + 10 * ~33px row height) and
+   scrolls both axes rather than growing the page or clipping wide content. */
+.table-scroll {
+  max-height: 366px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.table-scroll table.data-table {
+  min-width: 480px;
+  border: none;
+}
+
+.table-scroll table.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+form.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+}
+
+form.settings-form label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+form.settings-form input:not([type="checkbox"]) {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+/* Checkboxes (form-toggles) need label-beside-input, not the column layout
+   the rest of .settings-form's labels use, and must not inherit the
+   padded/bordered box styling above -- that combination breaks native
+   checkbox rendering in every browser. */
+form.settings-form label.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+form.settings-form input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--series-power-import);
+  cursor: pointer;
+}
+
+form.settings-form button {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  background: var(--series-power-import);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form-status {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.form-status-error {
+  color: var(--series-power-import);
+  font-weight: 600;
+}
+
+/* occupancy_log's delete button -- the only row-level delete action
+   in this app. Reuses the palette's existing red slot (battery-discharge)
+   rather than adding a new token for one UI-chrome button. */
+.btn-delete {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--series-battery-discharge);
+  background: transparent;
+  color: var(--series-battery-discharge);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.btn-delete:hover {
+  background: var(--series-battery-discharge);
+  color: white;
+}
+
+/* ---- Contextual help: "i" icons + shared popover + Help tab ---- */
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--baseline);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.info-icon:hover,
+.info-icon.is-open {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.help-popover {
+  position: fixed;
+  z-index: 50;
+  max-width: 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  display: none;
+}
+
+.help-popover.is-open {
+  display: block;
+}
+
+.help-popover-title {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.help-popover-text {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.help-section-title {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.help-topic {
+  padding: 10px 0;
+  border-top: 1px solid var(--gridline);
+}
+
+.help-topic:first-of-type {
+  border-top: none;
+}
+
+.help-topic-title {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.help-topic-text {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+
+/* Sun meter -- a "single ratio against a limit", so a meter
+   with a same-ramp track rather than a diverging red/green scale. There is no
+   good/bad polarity in "sunnier than usual"; colouring it as if there were
+   would assert a judgement the data does not carry.
+   The tick marks 100% = typical for that time of year, which is what makes an
+   absolute figure legible: 4.1h of sun is dismal in June and above average in
+   December, and only the comparison says which. Scale runs 0-200% so an
+   exceptional day reads as clearly past the tick instead of pinning full. */
+.sun-meter {
+  position: relative;
+  display: inline-block;
+  width: 84px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--gridline);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.sun-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--series-weather-sun);
+  border-radius: 4px;
+}
+
+/* The reference tick sits above the fill so it stays visible at any value. */
+.sun-meter-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--surface-1);
+  opacity: 0.85;
+}
+
+.sun-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Attribution is a CC BY 4.0 licence obligation wherever the data is shown --
+   recessive, but never absent. */
+.weather-credit {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* Key for the sun rail. Rendered in HTML rather than drawn on the canvas so
+   there is no text competing with the plot for space, and so a screen reader
+   gets it as words. */
+/* Normal text flow, NOT flex: as a flex container each mark became its own
+   flex item and the sentence broke across lines mid-phrase ("Daily sunshine"
+   / "= typical for that date"). Inline marks let the line wrap where the
+   words do. */
+.sun-key-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 11px;
+  vertical-align: -1px;
+  margin-right: 2px;
+  background: var(--series-weather-sun);
+  opacity: 0.65;
+  border-radius: 1px;
+}
+
+/* Mirrors the dashed reference line the plugin draws at "typical". */
+.sun-key-line {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  vertical-align: 3px;
+  margin: 0 2px;
+  border-top: 1px dashed var(--text-muted);
+}
+
+/* Drag-to-select hint, shown once in the range controls rather than repeated
+   under every chart. Cursor signals the canvas is draggable. */
+.range-drag-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.chart-card canvas {
+  cursor: crosshair;
+  /* Required for drag-to-zoom to work on touch, including inside the Android
+     WebView wrapper (android/omnimeter), which loads this same page. Without
+     it the browser claims horizontal gestures for scrolling and the pointer
+     handlers never see the drag. `pan-y` gives up only the horizontal axis,
+     so the page still scrolls vertically as normal. */
+  touch-action: pan-y;
+}

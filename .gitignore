@@ -1,0 +1,16 @@
+# Python bytecode / test artifacts (created when running the suite in a working tree)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data (CSV dropzone + SQLite DB) — never version-controlled.
+# Anchored to the app root: must NOT match any future src/data/ source package
+# (a bare `data/` matches at any depth).
+/data/
+
+# Self-hosted Docker Compose install — real secrets/tokens once copied from
+# .env.example and filled in by scripts/setup_wizard.py; never committed.
+# devices.json (real IPs/serials) stays tracked in this repo on purpose —
+# only .env is new/secret here.
+/.env
+/backups/

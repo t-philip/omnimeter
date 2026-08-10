@@ -1,0 +1,65 @@
+{
+  "_comment": "EXAMPLE: any meter that serves JSON over HTTP, no HomeWizard involved. Copy the entries you need into devices.json. Keys starting with _ are ignored. Full guide: README, 'Live polling from any meter'.",
+
+  "_comment_field_map": "LEFT = OmniMeter's canonical column name (never change these). RIGHT = whatever YOUR meter's JSON calls that value. Use dots for nested values, and a number to index an array: 'external.0.value'. Map only what your meter reports; omit the rest.",
+
+  "p1": {
+    "protocol": "generic_json",
+    "url": "http://REPLACE_ME/api/v1/data",
+    "token_env": null,
+    "field_map": {
+      "import_t1_kwh": "REPLACE_ME",
+      "import_t2_kwh": "REPLACE_ME",
+      "import_combined_kwh": "REPLACE_ME",
+      "export_t1_kwh": "REPLACE_ME",
+      "export_t2_kwh": "REPLACE_ME",
+      "export_combined_kwh": "REPLACE_ME",
+      "l1_max_w": "REPLACE_ME",
+      "l2_max_w": "REPLACE_ME",
+      "l3_max_w": "REPLACE_ME"
+    }
+  },
+
+  "_comment_single_tariff": "No day/night tariff split? Delete the t1/t2 lines above and map import_combined_kwh/export_combined_kwh alone.",
+
+  "gas": {
+    "protocol": "generic_json",
+    "url": "http://REPLACE_ME/api/v1/data",
+    "token_env": null,
+    "field_map": {
+      "total_gas_m3": "REPLACE_ME"
+    }
+  },
+
+  "_comment_gas": "Gas is often reported by the electricity meter rather than a device of its own -- point this url at the same endpoint as p1 if so. If it arrives inside an array, address it like 'external.0.value'.",
+
+  "water": {
+    "protocol": "generic_json",
+    "url": "http://REPLACE_ME/api/v1/data",
+    "token_env": null,
+    "field_map": {
+      "water_usage_dl": "REPLACE_ME"
+    }
+  },
+
+  "_comment_water": "water_usage_dl is a CUMULATIVE total in deciliters (1 m3 = 10000 dl), not per-period usage.",
+
+  "battery": {
+    "protocol": "generic_json",
+    "url": "http://REPLACE_ME/api/v1/data",
+    "token_env": null,
+    "field_map": {
+      "import_kwh": "REPLACE_ME",
+      "export_kwh": "REPLACE_ME",
+      "soc_pct": "REPLACE_ME"
+    }
+  },
+
+  "_comment_auth": "Meter needs a bearer token? Set token_env to the NAME of an environment variable holding it (e.g. \"MY_METER_TOKEN\"), add that variable to .env, and leave the token itself out of this file. Most LAN meter APIs need no auth at all -- leave token_env null.",
+
+  "_comment_values": "All energy/gas/water values must be CUMULATIVE METER READINGS. OmniMeter derives usage by differencing consecutive readings, so a per-interval figure would be read as a meter that resets constantly.",
+
+  "_comment_missing_fields": "Your meter doesn't report some of these? Just delete those lines. A value OmniMeter has no reading for is stored as empty -- never as 0, and never guessed or filled in with a default. Charts simply show nothing for that series instead of a flat zero line, because 'you exported no energy' and 'we don't know what you exported' are different claims and only one of them is true.",
+
+  "_comment_check": "If NOTHING maps -- e.g. every name on the right is wrong -- the poller logs a field_mapping_error naming the keys your meter DID return, so you can correct the map. It will not write a row of empty values that would look like a real reading of nothing."
+}

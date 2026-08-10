@@ -1,0 +1,98 @@
+# Self-hosted deployment. The author's own reference install does NOT use
+# this file -- it runs natively via systemd instead (see README's
+# "Reference deployment" section).
+#
+# First run:
+#   cp .env.example .env
+#   cp devices.json.example devices.json
+#   docker compose run --rm setup
+#   docker compose up -d
+#
+# .env is read two ways here, deliberately: docker-compose itself auto-loads
+# a file literally named .env from this directory for ${VAR} substitution
+# below (e.g. ${OMNIMETER_PORT}), and each service also declares it under
+# env_file: so the same values land inside the container's process
+# environment for src/app.py, meter_poller.py, etc. to read.
+
+services:
+  web:
+    build: .
+    env_file: .env
+    ports:
+      - "${OMNIMETER_PORT:-8000}:8000"
+    volumes:
+      - ./data:/opt/omnimeter/data
+      - ./devices.json:/opt/omnimeter/devices.json:ro
+    restart: unless-stopped
+
+  api-ingest:
+    build: .
+    command: python -m src.meter_poller
+    env_file: .env
+    volumes:
+      - ./data:/opt/omnimeter/data
+      - ./devices.json:/opt/omnimeter/devices.json:ro
+    restart: unless-stopped
+
+  # CSV dropzone import -- optional for a fresh install (the api-ingest poller
+  # above is the primary live-data source), useful for backfilling historical
+  # exports. Same 15-min cadence as the reference deployment's ingest timer.
+  ingest:
+    build: .
+    command: sh -c "while true; do python -m src.ingest_cli; sleep 900; done"
+    env_file: .env
+    volumes:
+      - ./data:/opt/omnimeter/data
+    restart: unless-stopped
+
+  # Daily DB backup, same schedule as the reference deployment's backup timer
+  # (retention is handled inside scripts/backup.py itself, unchanged). OMNIMETER_BACKUP_DIR
+  # is fixed to the container-side mount point below, not user-edited -- the
+  # actual knob is OMNIMETER_BACKUP_HOST_DIR in .env, which controls where
+  # that mount points to on your own machine.
+  backup:
+    build: .
+    command: sh -c "while true; do python -m scripts.backup; sleep 86400; done"
+    env_file: .env
+    environment:
+      OMNIMETER_BACKUP_DIR: /backups
+    # data/ is NOT :ro despite backup.py only conceptually reading it -- found
+    # live (2026-07-31): db.get_connection() sets WAL mode unconditionally,
+    # which needs to create/manage -wal/-shm sidecar files in the same
+    # directory just to OPEN the DB, even for what's logically a read-only
+    # connection (here, checking the nightly_backup_enabled toggle). A
+    # read-only mount fails with "unable to open database file" before
+    # backup.py ever gets to its actual read.
+    volumes:
+      - ./data:/opt/omnimeter/data
+      - ${OMNIMETER_BACKUP_HOST_DIR:-./backups}:/backups
+    restart: unless-stopped
+
+  # One-off: `docker compose run --rm setup`. Never started by `up`.
+  #
+  # Runs as root (unlike every other service here, which stays on the
+  # Dockerfile's non-root `omnimeter` user) and, before the wizard itself,
+  # chowns every bind-mounted host directory to that user -- found live on a
+  # real Linux Docker host (2026-07-31): a bind mount preserves the HOST
+  # path's ownership verbatim (no UID remapping), and Docker auto-creates a
+  # missing bind-mount source as root, so on a truly fresh checkout both
+  # `cp devices.json.example devices.json` and Docker's own auto-created
+  # ./data/./backups end up root-owned -- the non-root `omnimeter` user in
+  # every other service then gets a real PermissionError/`unable to open
+  # database file` trying to write them. setup never listens on a network
+  # port and only touches paths the operator explicitly bind-mounted in --
+  # root here is scoped to this one-shot step, not a general relaxation (web/
+  # api-ingest/ingest/backup all stay on the non-root user).
+  setup:
+    build: .
+    command: sh -c "chown -R omnimeter:omnimeter /opt/omnimeter/data /backups && python -m scripts.setup_wizard"
+    env_file: .env
+    user: "0:0"
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./data:/opt/omnimeter/data
+      - ${OMNIMETER_BACKUP_HOST_DIR:-./backups}:/backups
+      - ./devices.json:/opt/omnimeter/devices.json
+      - ./.env:/opt/omnimeter/.env
+    profiles: ["setup"]

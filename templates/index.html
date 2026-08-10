@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OmniMeter</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>%E2%9A%A1</text></svg>">
+  <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>OmniMeter</h1>
+      <p class="subtitle">Power · gas · water · battery — from your P1 meter</p>
+    </div>
+    <div class="header-right">
+      <div class="header-controls">
+        <button id="font-decrease" type="button" aria-label="Decrease font size" title="Decrease font size">A&minus;</button>
+        <button id="font-increase" type="button" aria-label="Increase font size" title="Increase font size">A+</button>
+        <button id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">Theme</button>
+      </div>
+      <div id="last-refreshed" class="last-refreshed"></div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="overview" class="active">Overview</button>
+    <button data-tab="power">Power</button>
+    <button data-tab="gas">Gas</button>
+    <button data-tab="water">Water</button>
+    <button data-tab="battery">Battery</button>
+    <button data-tab="sufficiency">Self-Sufficiency</button>
+    <button data-tab="costs">Costs</button>
+    <button data-tab="comparison">Comparison</button>
+    <button data-tab="import">Import</button>
+    <button data-tab="datahealth">Data health</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="help">Help</button>
+  </nav>
+
+  <main>
+    <section id="panel-overview" class="panel active">
+      <div class="range-controls" data-target="overview"></div>
+      <div id="overview-tiles" class="stat-tiles"></div>
+      <nav class="subtabs">
+        <button data-subtab="overview-visuals" class="active">Visuals</button>
+        <button data-subtab="overview-data">Data</button>
+      </nav>
+      <div id="subpanel-overview-visuals" class="subpanel active">
+        <div class="overview-flow-grid">
+          <div class="chart-card">
+            <h3>Energy distribution</h3>
+            <div id="overview-flow"></div>
+          </div>
+          <div class="chart-card">
+            <h3>Energy flow: sources &rarr; uses <span class="badge-estimated">estimated</span><button class="info-icon" type="button" data-help="overview-energy-flow" aria-label="Help: Energy flow: sources to uses">&#9432;</button></h3>
+            <div id="overview-sankey"></div>
+          </div>
+        </div>
+        <div class="dashboard-grid">
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Electricity usage (kWh/day)</h3>
+              <div class="chart-avg" id="overview-power-avg"></div>
+            </div>
+            <canvas id="overview-chart-power"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Gas consumption (m&sup3;/day)</h3>
+              <div class="chart-avg" id="overview-gas-avg"></div>
+            </div>
+            <canvas id="overview-chart-gas"></canvas>
+          </div>
+        </div>
+      </div>
+      <div id="subpanel-overview-data" class="subpanel">
+        <div class="dashboard-grid">
+          <div class="chart-card">
+            <h3>Sources</h3>
+            <div id="overview-sources"></div>
+          </div>
+          <div class="chart-card">
+            <h3>Highs &amp; Lows</h3>
+            <div id="overview-highlow"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-power" class="panel">
+      <div class="range-controls" data-target="power"></div>
+      <div class="dashboard-grid">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Grid import / export (kWh/day)</h3>
+            <div class="chart-avg" id="power-import-export-avg"></div>
+          </div>
+          <p class="chart-hint">Shaded bands mark logged occupancy periods (Settings &rarr; Occupancy).</p>
+          <div id="power-sun-hint"></div>
+          <canvas id="chart-power"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Sources</h3>
+          <div id="power-sources"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h3>Phase load, daily max (W)</h3>
+          <div class="chart-avg" id="power-phase-avg"></div>
+        </div>
+        <canvas id="chart-power-phase"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Highs &amp; Lows</h3>
+        <div id="power-highlow"></div>
+      </div>
+    </section>
+
+    <section id="panel-gas" class="panel">
+      <div class="range-controls" data-target="gas"></div>
+      <div class="dashboard-grid">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Gas usage (m&sup3;/day)</h3>
+            <div class="chart-avg" id="gas-avg"></div>
+          </div>
+          <p class="chart-hint">Shaded bands mark logged occupancy periods (Settings &rarr; Occupancy).</p>
+          <canvas id="chart-gas"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Sources</h3>
+          <div id="gas-sources"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Highs &amp; Lows</h3>
+        <div id="gas-highlow"></div>
+      </div>
+    </section>
+
+    <section id="panel-water" class="panel">
+      <div class="range-controls" data-target="water"></div>
+      <div class="dashboard-grid">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Water usage (L/day)</h3>
+            <div class="chart-avg" id="water-avg"></div>
+          </div>
+          <p class="chart-hint">Shaded bands mark logged occupancy periods (Settings &rarr; Occupancy).</p>
+          <canvas id="chart-water"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Sources</h3>
+          <div id="water-sources"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Highs &amp; Lows</h3>
+        <div id="water-highlow"></div>
+      </div>
+    </section>
+
+    <section id="panel-battery" class="panel">
+      <div class="range-controls" data-target="battery"></div>
+      <div class="dashboard-grid">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Charge / discharge (kWh/day)</h3>
+            <div class="chart-avg" id="battery-flow-avg"></div>
+          </div>
+          <div id="battery-flow-hint"></div>
+          <canvas id="chart-battery-flow"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Sources</h3>
+          <div id="battery-sources"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h3>State of charge (%)</h3>
+          <div class="chart-avg" id="battery-soc-avg"></div>
+        </div>
+        <div id="battery-soc-hint"></div>
+        <canvas id="chart-battery-soc"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Highs &amp; Lows</h3>
+        <div id="battery-highlow"></div>
+      </div>
+    </section>
+
+    <section id="panel-sufficiency" class="panel">
+      <p><span class="badge-estimated">estimated</span> Derived from an assumed solar-yield model scaled by your
+        panel capacity, reconciled against real grid export. Not a measured value — your inverter's own
+        production data isn't accessible to OmniMeter.</p>
+      <div class="range-controls" data-target="sufficiency"></div>
+      <div id="sufficiency-body"></div>
+    </section>
+
+    <section id="panel-costs" class="panel">
+      <div class="range-controls" data-target="costs"></div>
+      <div id="costs-body"></div>
+    </section>
+
+    <section id="panel-comparison" class="panel">
+      <div class="chart-card">
+        <h3>Compare two periods</h3>
+        <p>Each period can be a single day (same From/To) or a range. Power, Gas, Water, Battery
+          and average headcount (from Occupancy in Settings) are totalled/averaged independently
+          for each and shown side by side.</p>
+        <div class="comparison-periods">
+          <div class="comparison-period">
+            <h4>Period A</h4>
+            <label>From <input type="date" id="compare-a-from"></label>
+            <label>To <input type="date" id="compare-a-to"></label>
+          </div>
+          <div class="comparison-period">
+            <h4>Period B</h4>
+            <label>From <input type="date" id="compare-b-from"></label>
+            <label>To <input type="date" id="compare-b-to"></label>
+          </div>
+        </div>
+        <div id="comparison-body"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Consumption notes<button class="info-icon" type="button" data-help="comparison-notes" aria-label="Help: Consumption notes">&#9432;</button></h3>
+        <p><strong>This is not a fault report.</strong> It lists stretches whose usage sat far outside that
+          category's own recent baseline — in either direction. A near-zero day usually means nobody was
+          home, or the day simply broke routine; a high day might be EV charging, guests, or a cold snap.
+          The data is correct in all of those cases. Where a headcount is logged under Occupancy in
+          Settings, it's shown alongside as a hint. Nothing here can be deleted — only marked as
+          reviewed. Not run automatically.</p>
+        <p class="muted">Consecutive days are grouped into one entry, so a fortnight away reads as a single
+          note rather than fourteen. Only the range selected below is listed — it is the same range the
+          charts on the other tabs use, so narrowing it there (or dragging across a chart) narrows this too.
+          Covers what the household actually drew: grid import, gas and water. Solar export and battery
+          charge/discharge are deliberately not listed — export is what was left over rather than something
+          used, and battery flow is the same energy counted on its way past, so both track the weather rather
+          than anything you did. Neither is unmonitored: both are still checked in full under Data health.</p>
+        <div class="range-controls" data-target="comparison"></div>
+        <button type="button" id="check-consumption-notes">Check consumption notes</button>
+        <div id="consumption-notes-range" class="findings-count" hidden></div>
+        <div id="consumption-notes-result"></div>
+        <button type="button" id="toggle-consumption-details" class="link-button" hidden>Show details</button>
+        <div id="consumption-notes-detail"></div>
+      </div>
+    </section>
+
+    <section id="panel-import" class="panel">
+      <nav class="subtabs">
+        <button data-subtab="meter-data" class="active">Meter data</button>
+        <button data-subtab="tariffs">Tariffs</button>
+      </nav>
+      <div id="subpanel-meter-data" class="subpanel active">
+        <div class="chart-card" id="import-csv-card">
+          <h3>Meter export files (CSV)<button class="info-icon" type="button" data-help="import-csv" aria-label="Help: Meter export files">&#9432;</button></h3>
+          <p>Upload a Power (P1e-), Gas (P1g-), Water- or Bat- export directly from your meter's
+            companion app — no need to SCP it in. Ingested immediately.</p>
+          <form class="settings-form" id="form-import-csv">
+            <label>File <input type="file" name="file" accept=".csv" required></label>
+            <button type="submit">Upload &amp; ingest</button>
+          </form>
+          <div id="import-csv-result"></div>
+          <div id="import-fix-hint" class="fix-hint" hidden></div>
+        </div>
+        <div class="chart-card">
+          <h3>Recent imports</h3>
+          <div class="table-scroll">
+            <table class="data-table" id="import-history-table">
+              <thead><tr><th>File</th><th>Category</th><th>Rows</th><th>Ingested at</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div id="subpanel-tariffs" class="subpanel">
+        <div class="chart-card">
+          <h3>Tariff rate document (PDF)<button class="info-icon" type="button" data-help="import-pdf" aria-label="Help: Tariff rate document">&#9432;</button></h3>
+          <p>Upload your supplier's rate specification PDF — rate periods are extracted and added to the
+            rate schedules automatically. Recognized today: Vattenfall ("Tarievenspecificatie" and
+            "Tarievenblad"), Greenchoice, Pure Energie, Innova Energie, Mega Energie, and Clean Energy
+            all publish a downloadable rate sheet — get it from their website. Eneco and Budget Thuis
+            don't — open their Modelcontract page and use your browser's "Print &rarr; Save as PDF"
+            instead; Budget Thuis also needs its rate section expanded first (see the &#9432; for exact
+            steps). Other suppliers aren't supported yet — use the CSV template below, or manual rate
+            entry under Settings &rarr; Rates.</p>
+          <form class="settings-form" id="form-import-pdf">
+            <label>File <input type="file" name="file" accept=".pdf" required></label>
+            <button type="submit">Upload &amp; parse</button>
+          </form>
+          <div id="import-pdf-result"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Tariff rate CSV<button class="info-icon" type="button" data-help="import-csv" aria-label="Help: Tariff rate CSV">&#9432;</button></h3>
+          <p>For any supplier without a recognized PDF format: download the template, fill in your
+            rate periods by hand from your bill or contract, and upload it here.</p>
+          <p><a href="/api/import/tariff-csv/template" download>Download CSV template</a></p>
+          <form class="settings-form" id="form-import-tariff-csv">
+            <label>File <input type="file" name="file" accept=".csv" required></label>
+            <button type="submit">Upload &amp; parse</button>
+          </form>
+          <div id="import-tariff-csv-result"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-datahealth" class="panel">
+      <div class="chart-card">
+        <h3>Data freshness<button class="info-icon" type="button" data-help="health-freshness" aria-label="Help: Data freshness">&#9432;</button></h3>
+        <p>Most recent date with real data, per category. Costs Power/Gas show the latest rate period's
+          end date instead — the boundary past which Costs falls back to a carried-forward stale rate.</p>
+        <div id="data-freshness"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Data integrity<button class="info-icon" type="button" data-help="health-integrity" aria-label="Help: Data integrity">&#9432;</button></h3>
+        <p>Checks whether the stored data can be trusted — not whether your usage was unusual. Two passes:
+          <strong>missing days</strong>, where an ingest path stopped silently partway through (distinct from
+          "not tracked yet" before a device existed, and from staleness, covered by Data freshness above); and
+          <strong>integrity findings</strong> — meter resets, corrected sensor glitches, two sources disagreeing
+          about the same day, and physically impossible values such as a battery charge outside 0–100%. Everything
+          here points at an instrument or ingest fault, so a finding is worth explaining. Days where consumption
+          itself looked unusual are <em>not</em> faults and live under Consumption notes on the Comparison tab.
+          Not run automatically.</p>
+        <button type="button" id="check-data-health">Check data integrity</button>
+        <div id="data-health-result"></div>
+        <button type="button" id="toggle-health-details" class="link-button" hidden>Show details</button>
+        <div id="data-health-detail"></div>
+        <h4>Integrity findings</h4>
+        <div id="data-quality-result"></div>
+        <button type="button" id="toggle-quality-details" class="link-button" hidden>Show details</button>
+        <div id="data-quality-detail"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Totals reconciliation<button class="info-icon" type="button" data-help="health-reconciliation" aria-label="Help: Totals reconciliation">&#9432;</button></h3>
+        <p>Every other check on this page looks for something that seems odd. This one proves the arithmetic.
+          On a cumulative meter a day's usage is simply the closing reading minus the opening one, so each
+          stored daily total is re-derived that way — a completely different route to the same number — and
+          compared. A summation bug cannot hide in both. Dates where the rollup deliberately drops an interval
+          (a meter reset, or a gap longer than 26 hours) are reported as <em>unverifiable</em> rather than
+          counted as passes, and today is skipped because it is still in progress. Not run automatically.</p>
+        <button type="button" id="check-reconciliation">Check totals</button>
+        <div id="reconciliation-result"></div>
+        <button type="button" id="toggle-reconciliation-details" class="link-button" hidden>Show details</button>
+        <div id="reconciliation-detail"></div>
+      </div>
+    </section>
+
+    <section id="panel-settings" class="panel">
+      <nav class="subtabs">
+        <button data-subtab="rates" class="active">Rates</button>
+        <button data-subtab="system">System</button>
+        <button data-subtab="features">Features</button>
+        <button data-subtab="occupancy">Occupancy</button>
+      </nav>
+      <div id="subpanel-rates" class="subpanel active">
+        <div class="chart-card">
+          <h3>Electricity rate schedule<button class="info-icon" type="button" data-help="settings-rate-power" aria-label="Help: Electricity rate schedule">&#9432;</button></h3>
+          <p class="badge-estimated" style="display:inline-block;">net metering (salderen): sell rate = buy rate</p>
+          <div class="table-scroll">
+            <table class="data-table" id="rate-table">
+              <thead><tr><th>Start</th><th>End</th><th>Buy ct/kWh</th><th>Sell ct/kWh</th><th>Source</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <form class="settings-form" id="form-rate" style="margin-top:14px;">
+            <label>Period start <input type="date" name="period_start" required></label>
+            <label>Period end <input type="date" name="period_end" id="rate-period-end" required></label>
+            <label class="checkbox-label"><input type="checkbox" id="rate-ongoing"> Ongoing (no end date yet)</label>
+            <label>Buy (ct/kWh) <input type="number" step="0.001" name="buy_ct_per_kwh" required></label>
+            <label>Sell (ct/kWh) <input type="number" step="0.001" name="sell_ct_per_kwh" required></label>
+            <label>Source <input type="text" name="source" placeholder="e.g. supplier renewal letter"></label>
+            <button type="submit">Add period</button>
+          </form>
+          <div id="rate-status" class="form-status"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Gas rate schedule<button class="info-icon" type="button" data-help="settings-rate-gas" aria-label="Help: Gas rate schedule">&#9432;</button></h3>
+          <div class="table-scroll">
+            <table class="data-table" id="gas-rate-table">
+              <thead><tr><th>Start</th><th>End</th><th>Price &euro;/m&sup3;</th><th>Source</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <form class="settings-form" id="form-gas-rate" style="margin-top:14px;">
+            <label>Period start <input type="date" name="period_start" required></label>
+            <label>Period end <input type="date" name="period_end" id="gas-rate-period-end" required></label>
+            <label class="checkbox-label"><input type="checkbox" id="gas-rate-ongoing"> Ongoing (no end date yet)</label>
+            <label>Price (&euro;/m&sup3;) <input type="number" step="0.000001" name="price_eur_per_m3" required></label>
+            <label>Source <input type="text" name="source" placeholder="e.g. supplier renewal letter"></label>
+            <button type="submit">Add period</button>
+          </form>
+          <div id="gas-rate-status" class="form-status"></div>
+        </div>
+      </div>
+      <div id="subpanel-system" class="subpanel">
+        <div class="chart-card">
+          <h3>PV system<button class="info-icon" type="button" data-help="settings-pv" aria-label="Help: PV system">&#9432;</button></h3>
+          <form class="settings-form" id="form-pv">
+            <label>Rated capacity (kWp)
+              <input type="number" step="0.01" name="kwp_rating" id="pv-kwp" required>
+            </label>
+            <label>Installed date
+              <input type="date" name="installed_date" id="pv-installed-date">
+            </label>
+            <label>Notes
+              <input type="text" name="notes" id="pv-notes">
+            </label>
+            <button type="submit">Save</button>
+          </form>
+          <div id="pv-status" class="form-status"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Fiscal year start ("1y" button)<button class="info-icon" type="button" data-help="settings-fiscal-year" aria-label="Help: Fiscal year start">&#9432;</button></h3>
+          <p>Controls what date range the "1y" preset resolves to on each tab (start of the
+            configured fiscal year through today). Water defaults to the calendar year; Power and
+            Gas default to the Dutch utility billing year (1 May).</p>
+          <form class="settings-form" id="form-fiscal-years">
+            <label>Power start month (1&ndash;12) <input type="number" min="1" max="12" name="power_fy_start_month" required></label>
+            <label>Power start day <input type="number" min="1" max="31" name="power_fy_start_day" required></label>
+            <label>Gas start month (1&ndash;12) <input type="number" min="1" max="12" name="gas_fy_start_month" required></label>
+            <label>Gas start day <input type="number" min="1" max="31" name="gas_fy_start_day" required></label>
+            <label>Water start month (1&ndash;12) <input type="number" min="1" max="12" name="water_fy_start_month" required></label>
+            <label>Water start day <input type="number" min="1" max="31" name="water_fy_start_day" required></label>
+            <button type="submit">Save</button>
+          </form>
+          <div id="fiscal-years-status" class="form-status"></div>
+        </div>
+      </div>
+      <div id="subpanel-features" class="subpanel">
+        <div class="chart-card">
+          <h3>Feature toggles<button class="info-icon" type="button" data-help="settings-toggles" aria-label="Help: Feature toggles">&#9432;</button></h3>
+          <p>The local device API is the live real-time poller (power/gas/water/battery) &mdash; checked
+            once per poll cycle, so toggling it off takes effect within seconds, not just on next restart.</p>
+          <form class="settings-form" id="form-toggles">
+            <label class="checkbox-label"><input type="checkbox" name="homewizard_api_enabled"> Local device API (live polling)</label>
+            <label class="checkbox-label"><input type="checkbox" name="import_power_enabled"> CSV import &mdash; Power</label>
+            <label class="checkbox-label"><input type="checkbox" name="import_gas_enabled"> CSV import &mdash; Gas</label>
+            <label class="checkbox-label"><input type="checkbox" name="import_water_enabled"> CSV import &mdash; Water</label>
+            <label class="checkbox-label"><input type="checkbox" name="pdf_import_enabled"> Tariff import (PDF/CSV)</label>
+            <label class="checkbox-label"><input type="checkbox" name="nightly_backup_enabled"> Nightly DB backup</label>
+            <label class="checkbox-label"><input type="checkbox" name="weather_enabled"> Weather data (Open-Meteo) &mdash; the only feature that contacts the internet; sends your configured coordinates, rounded</label>
+            <button type="submit">Save</button>
+          </form>
+          <div id="toggles-status" class="form-status"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Dashboard visibility<button class="info-icon" type="button" data-help="settings-visibility" aria-label="Help: Dashboard visibility">&#9432;</button></h3>
+          <p>Hide a tab if you don't have that device — Power always shows (every OmniMeter install has a
+            P1 meter). Gas/Water/Battery apply to the tab navigation and the Overview tiles/Sources list;
+            Self-Sufficiency (solar) applies to its own tab only, since it isn't part of the Overview tiles.
+            Costs and Comparison are unaffected for now.</p>
+          <form class="settings-form" id="form-visibility">
+            <label class="checkbox-label"><input type="checkbox" name="show_gas_tab"> Gas</label>
+            <label class="checkbox-label"><input type="checkbox" name="show_water_tab"> Water</label>
+            <label class="checkbox-label"><input type="checkbox" name="show_battery_tab"> Battery</label>
+            <label class="checkbox-label"><input type="checkbox" name="show_sufficiency_tab"> Self-Sufficiency (solar)</label>
+            <button type="submit">Save</button>
+          </form>
+          <div id="visibility-status" class="form-status"></div>
+        </div>
+      </div>
+      <div id="subpanel-occupancy" class="subpanel">
+        <div class="chart-card">
+          <h3>Occupancy<button class="info-icon" type="button" data-help="settings-occupancy" aria-label="Help: Occupancy">&#9432;</button></h3>
+          <p>Headcount for a date range (you alone = 1, nobody home/away = 0). Each entry is the full
+            headcount for its dates, not an addition to another entry, so log the new total every time
+            it changes. Entries <em>may</em> overlap: a shorter entry nested inside a longer one wins for
+            the days it covers, which is how a short trip taken during a long visit is recorded.</p>
+          <div class="table-scroll">
+            <table class="data-table" id="occupancy-table">
+              <thead><tr><th>From</th><th>To</th><th>People</th><th>Notes</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <form class="settings-form" id="form-occupancy" style="margin-top:14px;">
+            <label>From <input type="datetime-local" name="date_from" required></label>
+            <label>To <input type="datetime-local" name="date_to" required></label>
+            <label>People <input type="number" min="0" max="20" step="1" name="occupant_count" required></label>
+            <label>Notes <input type="text" name="notes" placeholder="e.g. guests visiting"></label>
+            <button type="submit">Add entry</button>
+          </form>
+          <div id="occupancy-status" class="form-status"></div>
+          <h4 style="margin-top:18px;">Suggested trips</h4>
+          <div id="occupancy-suggestions"></div>
+          <div id="occupancy-stats"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-help" class="panel">
+      <div class="chart-card">
+        <h3>Help</h3>
+        <p>The same explanations shown by the &#9432; icons next to Import and Settings items,
+          listed here for browsing.</p>
+        <div id="help-body"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>OmniMeter v{{ app_version }} &mdash; Copyright &copy; 2026
+      <a href="https://github.com/t-philip" target="_blank" rel="noopener">T. Philip</a>.
+      Licensed under the
+      <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General
+      Public License v3.0</a> (see the <code>LICENSE</code> file included with this program).
+      This program comes with ABSOLUTELY NO WARRANTY; it is provided "as is", without warranty of any
+      kind &mdash; see the license for the full disclaimer and limitation of liability (sections 15&ndash;16).</p>
+  </footer>
+  <div id="help-popover" class="help-popover" role="tooltip"></div>
+
+  <script>
+    // The dashboard's own forms send this on every write request
+    // (see dashboard.js writeHeaders()). tojson (not raw interpolation)
+    // renders it as a proper JS string literal, safe regardless of the
+    // token's actual character content.
+    window.OMNIMETER_WRITE_API_TOKEN = {{ write_token|tojson }};
+    // The energy-flow diagram's "house" node label was
+    // hardcoded to a specific household name -- now sourced from
+    // OMNIMETER_HOME_LABEL (defaults to "Home") so a self-hoster never sees
+    // someone else's household name.
+    window.OMNIMETER_HOME_LABEL = {{ home_label|tojson }};
+    window.OMNIMETER_TIMEZONE = {{ timezone_name|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

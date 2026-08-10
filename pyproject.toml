@@ -1,0 +1,21 @@
+[tool.ruff]
+target-version = "py312"
+# 135, not the default 88/120: several existing lines are single dense
+# expressions (ternaries, dict literals, SQL string literals in tests)
+# where wrapping would hurt readability more than a longer line does.
+line-length = 135
+
+[tool.ruff.lint]
+# E/F/W: pycodestyle + pyflakes -- correctness and basic style.
+# I: import sorting. UP: modernize syntax for the target version.
+# B: bugbear -- common real-bug patterns (mutable defaults, bare except, etc.).
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+# Baseline, not strict mode -- this codebase has never been type-checked.
+# Turning on the stricter flags is future work once existing findings are
+# triaged, not a one-shot requirement for adding the config at all.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
