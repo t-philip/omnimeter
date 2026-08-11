@@ -38,6 +38,11 @@ why, and for how to read it in your own language anyway without any app changes.
 
 ## Quick Start (self-hosted)
 
+**Already have OmniMeter running and just want a newer version? Skip to "Upgrading"
+below instead** — the steps here assume a fresh install, and repeating them over an
+existing one (a fresh `git clone`, or re-running the two `cp` lines below) discards
+your real database, device pairing, and write-auth token.
+
 Requires only Docker + Docker Compose — no Python install needed on your machine.
 
 ```bash
@@ -75,6 +80,35 @@ safe, fully recreatable), then asks individually before removing anything that h
 **Deliberately not built:** HTTPS/reverse-proxy — put this behind your own (Caddy, Nginx, a
 Tailscale funnel, etc.) if you need it reachable beyond your own LAN. No multi-user accounts; the
 write-auth token above is the only access control, matching the app's existing LAN-only design.
+
+## Upgrading
+
+Update your **existing** install directory in place — don't `git clone` a second copy
+and don't repeat the `cp .env.example .env` / `cp devices.json.example devices.json`
+lines above. Your real database, `.env`, and `devices.json` only exist in that one
+directory, on your own machine, on purpose (see `.gitignore`) — none of it lives in
+git, so anything that starts you over in a different or freshly-cloned directory
+leaves them all behind with nothing carried forward.
+
+```bash
+cd omnimeter        # your existing install directory, not a new clone
+git pull
+docker compose up -d --build
+```
+
+That's it. `git pull` never touches `data/`, `.env`, or `devices.json` — they're
+gitignored specifically so a pull can't overwrite them. Any new database columns a
+release adds are applied automatically the first time the app starts afterwards (see
+the migration functions in `src/db.py`); you don't need to run anything by hand for
+that. If a release's notes call out a new `.env` variable, add that one line to your
+existing `.env` yourself — don't recopy `.env.example` over it, that would blank out
+everything else already in there.
+
+**If you already lost data by re-cloning instead:** check whether the old directory
+still exists under its original name, or a renamed/backup copy of it — if so, copy its
+`data/omnimeter.db` into the new install's `data/` directory before starting the
+containers, then restart. Otherwise, see "Restoring a backup" below for recovering
+from the nightly backup, if one exists from before the reinstall.
 
 ## Using the dashboard
 
