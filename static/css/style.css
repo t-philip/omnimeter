@@ -915,6 +915,28 @@ table.hl-table th:nth-child(n + 3) {
   stroke: none;
 }
 
+/* Portion of a ribbon the merit-order allocation couldn't confidently pin
+   to one source/use pair (see energy_flow_matrix()'s fallback pass) --
+   dashed outline + dimmed fill so "this part is a guess" reads at a glance
+   in the diagram itself, not only in the caption below it. */
+.sankey-ribbon--fallback {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 5 3;
+  fill-opacity: 0.6;
+}
+
+.sankey-fallback-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 8px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border: 1px dashed var(--text-muted);
+  background: var(--text-muted);
+  opacity: 0.35;
+}
+
 .sankey-node {
   stroke: var(--border);
   stroke-width: 1;

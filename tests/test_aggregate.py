@@ -2260,6 +2260,30 @@ class TestEnergyFlowMatrix:
         for key, total in result["sources"].items():
             assert self._flow(result["flows"], key, "load") + self._flow(result["flows"], key, "battery_charge") + \
                 self._flow(result["flows"], key, "grid_out") == pytest.approx(total, abs=1e-6)
+        # Each flow entry must carry its own fallback flag (the Overview
+        # Sankey diagram uses this to style the forbidden-pair ribbon
+        # differently) -- true only for the one forbidden pair actually used.
+        for f in result["flows"]:
+            assert f["fallback"] == ((f["from"], f["to"]) in self._FORBIDDEN_PAIRS)
+
+    def test_fallback_flag_matches_forbidden_pair_membership(self):
+        # The two forbidden pairs are only ever reachable through the
+        # fallback pass -- every source's own preferred order already
+        # exhausts its supply against its physically-sensible targets, so a
+        # forbidden pair's flag must always be True, and every other pair's
+        # must always be False. Checked across every fixture already used
+        # above rather than one new case, since this is a structural
+        # invariant of the algorithm, not a single-scenario fact.
+        cases = [
+            dict(solar_kwh=14.3, discharge_kwh=26.1, import_kwh=19.7, charge_kwh=23.4, export_kwh=16.4),
+            dict(solar_kwh=20.0, discharge_kwh=0.0, import_kwh=0.0, charge_kwh=5.0, export_kwh=3.0),
+            dict(solar_kwh=2.0, discharge_kwh=3.0, import_kwh=10.0, charge_kwh=0.0, export_kwh=0.0),
+            dict(solar_kwh=10.0, discharge_kwh=5.0, import_kwh=5.0, charge_kwh=5.0, export_kwh=5.0),
+        ]
+        for kwargs in cases:
+            result = aggregate.energy_flow_matrix(**kwargs)
+            for f in result["flows"]:
+                assert f["fallback"] == ((f["from"], f["to"]) in self._FORBIDDEN_PAIRS)
 
     def test_no_pv_configured(self):
         result = aggregate.energy_flow_matrix(
@@ -2376,6 +2400,26 @@ class TestSumEnergyFlowMatrices:
         assert result["sources"] == {}
         assert result["unbalanced_kwh"] == 0.0
         assert result["fallback_kwh"] == 0.0
+
+    def test_fallback_flag_preserved_and_not_merged_with_non_fallback(self):
+        # needs_fallback_day contributes a real battery_discharge->battery_charge
+        # fallback flow (3.7 kWh, per the single-day test above); clean_day
+        # contributes none. The merged result must still carry fallback=True
+        # on that pair -- summing must not silently drop or flip the flag,
+        # and a same-pair non-fallback flow (if one ever existed on another
+        # day) must never be merged into the fallback total or vice versa.
+        needs_fallback_day = aggregate.energy_flow_matrix(
+            solar_kwh=14.3, discharge_kwh=26.1, import_kwh=19.7, charge_kwh=23.4, export_kwh=16.4
+        )
+        clean_day = aggregate.energy_flow_matrix(
+            solar_kwh=10.0, discharge_kwh=0.0, import_kwh=0.0, charge_kwh=0.0, export_kwh=0.0
+        )
+        result = aggregate.sum_energy_flow_matrices([needs_fallback_day, clean_day])
+        matches = [f for f in result["flows"] if f["from"] == "battery_discharge" and f["to"] == "battery_charge"]
+        assert len(matches) == 1
+        assert matches[0]["fallback"] is True
+        assert matches[0]["kwh"] == pytest.approx(3.7, abs=1e-6)
+        assert all(f["fallback"] is False for f in result["flows"] if f is not matches[0])
 
     def test_unbalanced_kwh_sums_across_days(self):
         day1 = aggregate.energy_flow_matrix(

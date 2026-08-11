@@ -1755,7 +1755,11 @@ def energy_flow_matrix(
     # one path that can produce a forbidden pair.
     fallback_order = ("load", "battery_charge", "grid_out")
 
-    flows_by_pair: dict[tuple[str, str], float] = {}
+    # Keyed by (source, use, is_fallback) rather than just (source, use) --
+    # the same pair can carry both a confidently-attributed portion (pass 1)
+    # and a mopped-up portion (pass 2) within one period, and the visual
+    # needs to tell those apart rather than blending them into one number.
+    flows_by_pair: dict[tuple[str, str, bool], float] = {}
     # Separate from unbalanced_kwh: this tracks kWh that WAS placed
     # somewhere (conservation holds), just through the pass-2 mop-up rather
     # than a physically-sensible pairing. Confirmed against real data
@@ -1772,7 +1776,7 @@ def energy_flow_matrix(
                 break
             portion = min(remaining_sources[source_key], remaining_uses[use_key])
             if portion > 1e-9:
-                pair = (source_key, use_key)
+                pair = (source_key, use_key, is_fallback)
                 flows_by_pair[pair] = flows_by_pair.get(pair, 0.0) + portion
                 remaining_sources[source_key] -= portion
                 remaining_uses[use_key] -= portion
@@ -1785,8 +1789,8 @@ def energy_flow_matrix(
         allocate(source_key, fallback_order, is_fallback=True)
 
     flows = [
-        {"from": frm, "to": to, "kwh": round(kwh, 4)}
-        for (frm, to), kwh in flows_by_pair.items()
+        {"from": frm, "to": to, "kwh": round(kwh, 4), "fallback": fb}
+        for (frm, to, fb), kwh in flows_by_pair.items()
         if kwh > 1e-9
     ]
 
@@ -1827,7 +1831,11 @@ def sum_energy_flow_matrices(daily_matrices: list[dict]) -> dict:
     """
     sources_total: dict[str, float] = defaultdict(float)
     uses_total: dict[str, float] = defaultdict(float)
-    flows_by_pair: dict[tuple[str, str], float] = defaultdict(float)
+    # Keyed by (source, use, is_fallback), same reasoning as
+    # energy_flow_matrix() itself -- one day's confidently-attributed solar
+    # -> grid_out kWh must not merge into another day's mopped-up
+    # grid_in -> grid_out kWh just because they share a (from, to) pair.
+    flows_by_pair: dict[tuple[str, str, bool], float] = defaultdict(float)
     unbalanced_total = 0.0
     fallback_total = 0.0
 
@@ -1837,13 +1845,13 @@ def sum_energy_flow_matrices(daily_matrices: list[dict]) -> dict:
         for key, value in day["uses"].items():
             uses_total[key] += value
         for f in day["flows"]:
-            flows_by_pair[(f["from"], f["to"])] += f["kwh"]
+            flows_by_pair[(f["from"], f["to"], f["fallback"])] += f["kwh"]
         unbalanced_total += day["unbalanced_kwh"]
         fallback_total += day["fallback_kwh"]
 
     flows = [
-        {"from": frm, "to": to, "kwh": round(kwh, 4)}
-        for (frm, to), kwh in flows_by_pair.items()
+        {"from": frm, "to": to, "kwh": round(kwh, 4), "fallback": fb}
+        for (frm, to, fb), kwh in flows_by_pair.items()
         if kwh > 1e-9
     ]
 

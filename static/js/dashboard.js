@@ -1472,22 +1472,37 @@
     let gradIndex = 0;
     for (const srcKey of sourceKeys) {
       for (const useKey of useKeys) {
-        const f = flows.find((fl) => fl.from === srcKey && fl.to === useKey);
-        if (!f || f.kwh <= 1e-9) continue;
-        const width = f.kwh * pxPerKwh;
-        const y0 = srcCursor[srcKey];
-        const y1 = useCursor[useKey];
-        // Gradient id prefixed with elId -- SVG <defs> ids are document-
-        // global, and this function re-renders on every range change.
-        const gradId = `${elId}-grad-${gradIndex++}`;
-        defs +=
-          `<linearGradient id="${gradId}" x1="0" x2="1" y1="0" y2="0">` +
-          `<stop offset="0" style="stop-color:var(${SANKEY_COLOR_VAR[srcKey]})" stop-opacity="0.55"></stop>` +
-          `<stop offset="1" style="stop-color:var(${SANKEY_COLOR_VAR[useKey]})" stop-opacity="0.55"></stop>` +
-          `</linearGradient>`;
-        ribbons += `<path class="sankey-ribbon" d="${sankeyRibbonPath(SRC_X + BAR_W, y0, USE_X, y1, width)}" fill="url(#${gradId})"></path>`;
-        srcCursor[srcKey] += width;
-        useCursor[useKey] += width;
+        // A pair can carry BOTH a confidently-attributed portion and a
+        // mopped-up (fallback) portion within the same period -- draw each
+        // as its own ribbon segment, stacked in the node's band, rather
+        // than blending them into one number the way a single .find() used
+        // to. Confident portion first so the uncertain part reads as an
+        // addition on top, not the whole ribbon.
+        const matches = flows
+          .filter((fl) => fl.from === srcKey && fl.to === useKey && fl.kwh > 1e-9)
+          .sort((a, b) => Number(a.fallback) - Number(b.fallback));
+        for (const f of matches) {
+          const width = f.kwh * pxPerKwh;
+          const y0 = srcCursor[srcKey];
+          const y1 = useCursor[useKey];
+          // Gradient id prefixed with elId -- SVG <defs> ids are document-
+          // global, and this function re-renders on every range change.
+          const gradId = `${elId}-grad-${gradIndex++}`;
+          defs +=
+            `<linearGradient id="${gradId}" x1="0" x2="1" y1="0" y2="0">` +
+            `<stop offset="0" style="stop-color:var(${SANKEY_COLOR_VAR[srcKey]})" stop-opacity="0.55"></stop>` +
+            `<stop offset="1" style="stop-color:var(${SANKEY_COLOR_VAR[useKey]})" stop-opacity="0.55"></stop>` +
+            `</linearGradient>`;
+          const ribbonCls = f.fallback ? "sankey-ribbon sankey-ribbon--fallback" : "sankey-ribbon";
+          const tooltip = f.fallback
+            ? `${sankeyLabel(srcKey)} → ${sankeyLabel(useKey)}: ${f.kwh.toFixed(2)} kWh (attribution uncertain -- see note below)`
+            : `${sankeyLabel(srcKey)} → ${sankeyLabel(useKey)}: ${f.kwh.toFixed(2)} kWh`;
+          ribbons +=
+            `<path class="${ribbonCls}" d="${sankeyRibbonPath(SRC_X + BAR_W, y0, USE_X, y1, width)}" fill="url(#${gradId})">` +
+            `<title>${escHtml(tooltip)}</title></path>`;
+          srcCursor[srcKey] += width;
+          useCursor[useKey] += width;
+        }
       }
     }
 
@@ -1517,9 +1532,10 @@
     if (data.fallback_kwh > 0.05 && totalUses > 0) {
       const pct = Math.round((data.fallback_kwh / totalUses) * 100);
       notes +=
-        `<p class="chart-hint">${escHtml(String(pct))}% of this period's flows (${data.fallback_kwh.toFixed(2)} kWh) ` +
-        `couldn't be attributed to a specific source — some days had both grid import and export (or both battery ` +
-        `charge and discharge), which day-level data can't fully separate.</p>`;
+        `<p class="chart-hint"><span class="sankey-fallback-swatch"></span>Dashed ribbons above (${escHtml(String(pct))}% ` +
+        `of this period's flows, ${data.fallback_kwh.toFixed(2)} kWh) couldn't be attributed to a specific source — ` +
+        `some days had both grid import and export (or both battery charge and discharge), which day-level data ` +
+        `can't fully separate. Hover a ribbon for its exact source/use pairing.</p>`;
     }
     if (data.unbalanced_kwh > 0.05) {
       notes +=
