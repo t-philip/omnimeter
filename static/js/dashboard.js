@@ -582,6 +582,14 @@
   // or a slow/blocked request must never delay the dashboard's first
   // render. Silent no-op if the toggle is off (server-side gate; see
   // update_check.py) or the check itself fails for any reason.
+  // Dismissing stores the SPECIFIC version dismissed, not just a boolean --
+  // so dismissing today's "v1.2.0 available" banner suppresses it going
+  // forward, but a later "v1.3.0 available" (once that ships) shows again
+  // even though the user already dismissed something once. A plain "seen
+  // an update notice, never show one again" flag would silently hide every
+  // future release too.
+  const UPDATE_DISMISS_KEY = "omnimeter-dismissed-update-version";
+
   async function checkForUpdate() {
     const banner = document.getElementById("update-banner");
     if (!banner) return;
@@ -589,7 +597,7 @@
       const res = await fetch("/api/update-check");
       if (!res.ok) return;
       const data = await res.json();
-      if (!data.enabled || !data.update_available) {
+      if (!data.enabled || !data.update_available || localStorage.getItem(UPDATE_DISMISS_KEY) === data.latest_version) {
         banner.hidden = true;
         return;
       }
@@ -600,7 +608,12 @@
         `<button type="button" class="update-banner-dismiss" aria-label="Dismiss">&times;</button>`;
       banner.hidden = false;
       const dismissBtn = banner.querySelector(".update-banner-dismiss");
-      if (dismissBtn) dismissBtn.addEventListener("click", () => { banner.hidden = true; });
+      if (dismissBtn) {
+        dismissBtn.addEventListener("click", () => {
+          localStorage.setItem(UPDATE_DISMISS_KEY, data.latest_version);
+          banner.hidden = true;
+        });
+      }
     } catch (err) {
       console.error("update check failed", err);
     }
