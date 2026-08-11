@@ -2015,6 +2015,37 @@ class TestVersion:
         assert re.match(r"^\d+\.\d+\.\d+$", __version__), __version__
 
 
+class TestUpdateCheckEndpoint:
+    def test_disabled_by_default_makes_no_network_call(self, client, monkeypatch):
+        # The toggle defaults off (see TestFeatureToggles) -- this test's
+        # real purpose is confirming the route respects that without ever
+        # reaching _fetch_latest_tag, safe to run without network access.
+        from src import update_check
+
+        def _boom(*a, **kw):
+            raise AssertionError("must not fetch when the toggle is off")
+
+        monkeypatch.setattr(update_check, "_fetch_latest_tag", _boom)
+        resp = client.get("/api/update-check")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["enabled"] is False
+        assert body["update_available"] is False
+
+    def test_enabled_reflects_toggle_and_reports_status(self, client, monkeypatch):
+        from src import update_check
+
+        monkeypatch.setattr(update_check, "_fetch_latest_tag", lambda timeout=5: "v99.0.0")
+        update_check._cache["checked_at"] = None
+        client.post("/api/settings/toggles", json={"update_check_enabled": True})
+        resp = client.get("/api/update-check")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["enabled"] is True
+        assert body["update_available"] is True
+        assert body["latest_version"] == "v99.0.0"
+
+
 class TestMeterCsvTemplate:
     """Vendor-neutral meter-CSV template download (GET, unauthenticated --
     it writes nothing, same as the tariff template)."""

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Flask, Response, g, jsonify, render_template, request
 
-from . import aggregate, db, ingest, localtime, tariff_parser, weather
+from . import aggregate, db, ingest, localtime, tariff_parser, update_check, weather
 from .__version__ import __version__
 from .ingest_cli import DEFAULT_IMPORTS_DIR
 from .solar_estimate import (
@@ -149,6 +149,8 @@ _TOGGLE_FIELDS = (
     # from the UI, so a self-hosting user could only enable weather by
     # editing the database by hand.
     "weather_enabled",
+    # Same reasoning -- see update_check.py's module docstring.
+    "update_check_enabled",
 )
 
 # UI-visibility switches -- deliberately a separate full-replace
@@ -378,6 +380,11 @@ def create_app() -> Flask:
     @app.route("/api/version")
     def api_version():
         return jsonify({"version": __version__})
+
+    @app.route("/api/update-check")
+    def api_update_check():
+        conn = get_conn()
+        return jsonify(update_check.get_status(enabled=update_check.is_enabled(conn)))
 
     def _period_totals(conn, f: str, t: str) -> dict:
         """Power/Gas/Water/Battery sums+avgs for one (f, t) range -- the

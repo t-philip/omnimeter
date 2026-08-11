@@ -578,6 +578,34 @@
     el.textContent = `Data refreshed ${fmtRelative(state.lastRefreshedIso)} (${fmtDateTime(state.lastRefreshedIso)})`;
   }
 
+  // Fire-and-forget, not awaited from DOMContentLoaded -- a GitHub outage
+  // or a slow/blocked request must never delay the dashboard's first
+  // render. Silent no-op if the toggle is off (server-side gate; see
+  // update_check.py) or the check itself fails for any reason.
+  async function checkForUpdate() {
+    const banner = document.getElementById("update-banner");
+    if (!banner) return;
+    try {
+      const res = await fetch("/api/update-check");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.enabled || !data.update_available) {
+        banner.hidden = true;
+        return;
+      }
+      banner.innerHTML =
+        `A newer version of OmniMeter is available: <strong>${escHtml(data.latest_version)}</strong> ` +
+        `(you're running ${escHtml(data.current_version)}). ` +
+        `<a href="${escHtml(data.release_url)}" target="_blank" rel="noopener noreferrer">View release &rarr;</a>` +
+        `<button type="button" class="update-banner-dismiss" aria-label="Dismiss">&times;</button>`;
+      banner.hidden = false;
+      const dismissBtn = banner.querySelector(".update-banner-dismiss");
+      if (dismissBtn) dismissBtn.addEventListener("click", () => { banner.hidden = true; });
+    } catch (err) {
+      console.error("update check failed", err);
+    }
+  }
+
   // Two bars per x-position, sharing a stack so positive/negative values
   // diverge from a common zero line (e.g. import above, export below) —
   // mirrors HA's energy usage chart style.
@@ -3131,7 +3159,7 @@
     "settings-toggles": {
       section: "Settings",
       title: "Feature toggles",
-      text: "Each toggle independently disables one data path without deleting anything already stored: Local device API pauses live polling; the three CSV import toggles block that file type's uploads on the Import tab; Tariff import (PDF/CSV) blocks both rate-schedule uploads on the Import tab; Nightly DB backup pauses the scheduled backup (useful while testing, so you're not filling your backups directory with throwaway snapshots).",
+      text: "Each toggle independently disables one data path without deleting anything already stored: Local device API pauses live polling; the three CSV import toggles block that file type's uploads on the Import tab; Tariff import (PDF/CSV) blocks both rate-schedule uploads on the Import tab; Nightly DB backup pauses the scheduled backup (useful while testing, so you're not filling your backups directory with throwaway snapshots). Weather data and Check GitHub for a newer version are OmniMeter's only two features that contact the internet at all, so both default off — turning either on is a deliberate opt-in, not just a data-path pause.",
     },
     "settings-visibility": {
       section: "Settings",
@@ -3248,5 +3276,6 @@
     // Keeps the "X min ago" text counting up between overview fetches;
     // the absolute timestamp alongside it doesn't need re-rendering.
     setInterval(renderLastRefreshed, 60000);
+    checkForUpdate();
   });
 })();

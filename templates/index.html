@@ -24,6 +24,8 @@
     </div>
   </header>
 
+  <div id="update-banner" class="update-banner" hidden></div>
+
   <nav class="tabs">
     <button data-tab="overview" class="active">Overview</button>
     <button data-tab="power">Power</button>
@@ -442,7 +444,8 @@
             <label class="checkbox-label"><input type="checkbox" name="import_water_enabled"> CSV import &mdash; Water</label>
             <label class="checkbox-label"><input type="checkbox" name="pdf_import_enabled"> Tariff import (PDF/CSV)</label>
             <label class="checkbox-label"><input type="checkbox" name="nightly_backup_enabled"> Nightly DB backup</label>
-            <label class="checkbox-label"><input type="checkbox" name="weather_enabled"> Weather data (Open-Meteo) &mdash; the only feature that contacts the internet; sends your configured coordinates, rounded</label>
+            <label class="checkbox-label"><input type="checkbox" name="weather_enabled"> Weather data (Open-Meteo) &mdash; contacts the internet; sends your configured coordinates, rounded</label>
+            <label class="checkbox-label"><input type="checkbox" name="update_check_enabled"> Check GitHub for a newer version &mdash; contacts api.github.com once a day; sends no data about your install, just checks the latest public release tag</label>
             <button type="submit">Save</button>
           </form>
           <div id="toggles-status" class="form-status"></div>

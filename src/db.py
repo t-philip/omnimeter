@@ -148,7 +148,11 @@ CREATE TABLE IF NOT EXISTS feature_toggles (
     -- to 0 so a self-hosting user opts in knowingly rather than
     -- discovering afterwards that the box talks to the internet and that
     -- the request carries their coordinates.
-    weather_enabled INTEGER NOT NULL DEFAULT 0
+    weather_enabled INTEGER NOT NULL DEFAULT 0,
+    -- OmniMeter's second outbound internet call (a GitHub releases lookup,
+    -- see src/update_check.py) -- same opt-in reasoning as weather_enabled
+    -- above, defaults to 0 for the same reason.
+    update_check_enabled INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO feature_toggles (id) VALUES (1);
 
@@ -381,6 +385,20 @@ def _migrate_add_visibility_toggles(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE feature_toggles ADD COLUMN weather_enabled INTEGER NOT NULL DEFAULT 0")
 
 
+def _migrate_add_update_check_toggle(conn: sqlite3.Connection) -> None:
+    """update_check_enabled is new -- add it to any DB created before this
+    change. Own function rather than folded into
+    _migrate_add_visibility_toggles above: that one is about show_*_tab
+    columns (weather_enabled riding along there was already a slight
+    mismatch); this is a second, unrelated opt-in outbound-call toggle, not
+    a visibility switch. Default 0, same opt-in reasoning as weather_enabled
+    -- an already-deployed DB must not start making outbound calls on
+    upgrade."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(feature_toggles)")}
+    if "update_check_enabled" not in existing:
+        conn.execute("ALTER TABLE feature_toggles ADD COLUMN update_check_enabled INTEGER NOT NULL DEFAULT 0")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _migrate(conn)
@@ -388,4 +406,5 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_occupancy_datetime(conn)
     _migrate_drop_ha_toggle(conn)
     _migrate_add_visibility_toggles(conn)
+    _migrate_add_update_check_toggle(conn)
     conn.commit()

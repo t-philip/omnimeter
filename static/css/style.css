@@ -178,6 +178,39 @@ header p.subtitle {
   white-space: nowrap;
 }
 
+/* Shown only when update_check_enabled is on AND a newer release exists
+   (see /api/update-check) -- hidden by default in markup so a disabled or
+   up-to-date install never flashes it, even before JS runs. Reuses
+   --series-estimate (the same orange as the "estimated" badges) rather
+   than a new colour -- both mean "worth a second look," not an error. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--series-estimate) 15%, var(--surface-1));
+  border-bottom: 1px solid var(--series-estimate);
+}
+
+.update-banner a {
+  color: var(--series-estimate);
+  font-weight: 600;
+}
+
+.update-banner-dismiss {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
 .header-controls button {
   appearance: none;
   border: 1px solid var(--border);
