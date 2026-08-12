@@ -195,6 +195,15 @@ header p.subtitle {
   border-bottom: 1px solid var(--series-estimate);
 }
 
+/* checkForUpdate() sets the [hidden] attribute correctly when there's no
+   update, but the class rule above has the same specificity as the
+   browser's own [hidden] { display: none } default and comes later in the
+   cascade, so it silently won -- the banner stayed a visible empty box
+   (padding + border, no content) instead of actually disappearing. */
+.update-banner[hidden] {
+  display: none;
+}
+
 .update-banner a {
   color: var(--series-estimate);
   font-weight: 600;
