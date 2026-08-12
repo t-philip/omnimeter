@@ -411,9 +411,58 @@
     );
   }
 
+  // A chart with zero rows for the period, or rows that are all-null (a data
+  // gap covering the whole range), renders as an indistinguishable blank
+  // canvas otherwise -- looks identical to a broken chart. Centralized here
+  // and in divergingBarChart, the only two chart entry points every tab's
+  // load*() function calls, so every chart on every tab gets this for free
+  // rather than needing a check duplicated at each call site.
+  function hasAnyData(labels, datasets) {
+    if (!labels || labels.length === 0) return false;
+    return datasets.some((ds) => (ds.data || []).some((v) => v != null));
+  }
+
+  // Card-level "offline" treatment: dashed border (reusing .empty-state's
+  // existing --baseline token, not a new style) plus a message naming the
+  // metric, read straight from the card's own <h3> so it can't drift out of
+  // sync with the heading already sitting right above it.
+  function showNoDataState(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const card = canvas.closest(".chart-card");
+    if (card) card.classList.add("chart-card--no-data");
+    canvas.style.display = "none";
+    charts[canvasId] = null;
+    const toggles = document.getElementById(`${canvasId}-toggles`);
+    if (toggles) toggles.remove();
+    let msg = document.getElementById(`${canvasId}-no-data`);
+    if (!msg) {
+      msg = document.createElement("p");
+      msg.id = `${canvasId}-no-data`;
+      msg.className = "empty-state chart-empty-state";
+      canvas.insertAdjacentElement("afterend", msg);
+    }
+    const heading = card ? card.querySelector("h3") : null;
+    const metric = heading ? heading.textContent.trim() : "this chart";
+    msg.textContent = `No data available for ${metric} in this period.`;
+  }
+
+  function clearNoDataState(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const card = canvas.closest(".chart-card");
+    if (card) card.classList.remove("chart-card--no-data");
+    canvas.style.display = "";
+    const msg = document.getElementById(`${canvasId}-no-data`);
+    if (msg) msg.remove();
+  }
+
   function lineChart(canvasId, labels, datasets, extraPlugins = []) {
     const ctx = document.getElementById(canvasId);
     if (charts[canvasId]) charts[canvasId].destroy();
+    if (!hasAnyData(labels, datasets)) {
+      showNoDataState(canvasId);
+      return;
+    }
+    clearNoDataState(canvasId);
     const plugins = withRangeSelect(labels, extraPlugins);
     charts[canvasId] = new Chart(ctx, {
       type: "line",
@@ -635,6 +684,11 @@
   ) {
     const ctx = document.getElementById(canvasId);
     if (charts[canvasId]) charts[canvasId].destroy();
+    if (!hasAnyData(labels, [{ data: posData }, { data: negData }])) {
+      showNoDataState(canvasId);
+      return;
+    }
+    clearNoDataState(canvasId);
     const hasSunRail = (extraPlugins || []).some((p) => p && p.isSunRail);
     const plugins = withRangeSelect(labels, extraPlugins);
     const posColor = cssVar(posColorVar);

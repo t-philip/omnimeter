@@ -2,4 +2,4 @@
 # GET /api/version. Bump this in the same commit as the change it
 # describes, BEFORE tagging the release (git tag vX.Y.Z, gh release
 # create) -- never after, so the constant and the tag never drift.
-__version__ = "1.2.1"
+__version__ = "1.3.0"
