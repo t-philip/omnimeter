@@ -36,6 +36,18 @@ users the source of your modified version.
 The interface is English only — see "Language" under "Using the dashboard" below for
 why, and for how to read it in your own language anyway without any app changes.
 
+## Screenshots
+
+*(Illustrative data — not a real household.)*
+
+| Overview | Power |
+|---|---|
+| [![Overview tab](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![Power tab](docs/screenshots/power.png)](docs/screenshots/power.png) |
+
+| Costs |
+|---|
+| [![Costs tab](docs/screenshots/costs.png)](docs/screenshots/costs.png) |
+
 ## Quick Start (self-hosted)
 
 **Already have OmniMeter running and just want a newer version? Skip to "Upgrading"
