@@ -25,6 +25,17 @@ Dutch suppliers' rate sheets are recognized, plus a generic CSV format for
 any other — see "Settings" below. Your supplier and your meter brand are
 independent choices.
 
+**Where this works: not just the Netherlands.** The P1 port is a shared
+European standard (DSMR — Dutch Smart Meter Requirements), not a Dutch-only
+quirk. Besides the Netherlands, it's present on smart meters in **Belgium**
+(deactivated by default outside Brussels — ask your grid operator, e.g.
+Fluvius, to enable it), **Luxembourg** ("Smarty" meters — the port is
+encrypted and needs a P1 key from your utility), **Sweden**, **Finland**,
+**Denmark**, **Hungary**, **Austria**, and **Norway**. Germany is partial —
+only specific meter models (e.g. EasyMeter Q3D) expose a compatible port,
+not a national standard. If your meter has a P1 port at all, OmniMeter can
+read it regardless of country.
+
 Originally built for, and still running live on, the author's own home lab
 — see "Reference deployment" near the bottom if you're running a native
 systemd install instead of Docker. Everyone else: start below.
@@ -47,6 +58,27 @@ why, and for how to read it in your own language anyway without any app changes.
 | Costs |
 |---|
 | [![Costs tab](docs/screenshots/costs.png)](docs/screenshots/costs.png) |
+
+## Compared to other P1 tools
+
+A few other self-hosted P1/DSMR options exist — worth knowing where OmniMeter
+sits among them before you pick one:
+
+- **[DSMR-reader](https://github.com/dsmrreader/dsmr-reader)** is the
+  established option (490+ stars, Django-based) and a solid choice if you
+  only care about electricity. It's power-only and licensed **free for
+  non-commercial use only**. OmniMeter also covers gas, water, and battery in
+  one dashboard, with a Costs tab priced against your actual rate schedule,
+  and is licensed [AGPL-3.0](LICENSE) — free including commercial use, as
+  long as you share source changes with your own users.
+- **Small HomeWizard-specific dashboards** (e.g. `p1dash`,
+  `homewizard-monitor`) are lighter-weight live-power viewers, generally
+  single-device and power-only, without CSV import, cost tracking, or
+  multi-category history.
+- **HomeWizard's own app** is the easiest path if you only own HomeWizard
+  hardware and don't mind a cloud-connected, brand-locked tool. OmniMeter is
+  self-hosted (your data never leaves your LAN unless you opt in to weather/
+  update checks) and works with **any** P1 meter brand, not just HomeWizard's.
 
 ## Quick Start (self-hosted)
 
