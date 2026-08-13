@@ -47,6 +47,28 @@ users the source of your modified version.
 The interface is English only — see "Language" under "Using the dashboard" below for
 why, and for how to read it in your own language anyway without any app changes.
 
+## Highlights
+
+- **Zoom by dragging** — drag straight across any chart to narrow the date
+  range to exactly the span you selected, no date-picker fiddling. See "Using
+  the dashboard" below.
+- **Weather-correlated estimates** — solar self-sufficiency and gas usage are
+  reconciled against real daily weather (Open-Meteo shortwave radiation for
+  solar yield, temperature for heating-degree-days), not a flat seasonal
+  assumption.
+- **Tariff import, auto-detected** — upload a rate-sheet PDF and OmniMeter
+  recognizes the format itself (nine supplier formats today); no supplier
+  picker, no manual entry required. See "Settings" below.
+- **Bulk historical import** — CSV exports covering years of readings import
+  in one file, not just going-forward data.
+- **Occupancy correlation** — log who's home and when; consumption charts can
+  be read against that overlay.
+- **Feature toggles** — hide any tab/category you don't have (gas, water,
+  battery, solar), and every outbound network call (weather, update check)
+  is its own opt-in switch, off by default.
+- **Backup and restore** — automated nightly backups with 30-day retention,
+  and a documented restore path. See "Backups" below.
+
 ## Screenshots
 
 *(Illustrative data — not a real household.)*
@@ -77,8 +99,12 @@ sits among them before you pick one:
   multi-category history.
 - **HomeWizard's own app** is the easiest path if you only own HomeWizard
   hardware and don't mind a cloud-connected, brand-locked tool. OmniMeter is
-  self-hosted (your data never leaves your LAN unless you opt in to weather/
-  update checks) and works with **any** P1 meter brand, not just HomeWizard's.
+  self-hosted — none of your actual data (readings, costs, occupancy, and so
+  on) ever leaves your LAN. Two optional features make outbound calls, both
+  off by default: weather correlation sends only a coarsened, ~10 km-grid
+  location coordinate to Open-Meteo (never an address); the update check
+  sends nothing but an anonymous request to GitHub's public releases API. It
+  also works with **any** P1 meter brand, not just HomeWizard's.
 
 ## Quick Start (self-hosted)
 
@@ -203,15 +229,8 @@ tooltips are the one thing no translator — browser-native or otherwise — can
 
 **On a phone.** The dashboard is responsive and works in a mobile browser — including
 translation (see "Language" above): open the URL directly in your phone's own
-Chrome/Edge and the same one-tap translate applies. There is also an Android WebView
-wrapper under `android/` that points at your own instance — it loads this same page, so
-most of the above applies there too, **except automatic translate**: that banner is a
-Google Chrome *application* feature, not part of the underlying WebView engine any app
-embeds, so it doesn't appear inside the wrapper app. Android's system-wide "select text
-→ Translate" (long-press a block of text, then check the popup menu) is a different,
-OS-level mechanism and does still work inside the app, but it's manual and per-selection
-rather than automatic, and needs Google Play Services' on-device translate present on
-the device.
+Chrome/Edge and the same one-tap translate applies. No packaged Android app ships in
+this repo yet.
 
 ## Self-hosted configuration
 
