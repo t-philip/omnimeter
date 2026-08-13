@@ -36,8 +36,7 @@ host, and port, and save.
 
 **Cleartext HTTP works for any host you enter.** OmniMeter has no built-in
 HTTPS by default (see the main README's "Deliberately not built" note), so
-`http://` is the expected, normal case here — not a restricted allowlist like
-an earlier private build of this app used. If you've put your own reverse
+`http://` is the expected, normal case here. If you've put your own reverse
 proxy with HTTPS in front of your instance, use `https://` instead.
 
 ## Signing
@@ -48,10 +47,5 @@ release-signing keystore in this repo.
 
 ## Play Store
 
-Not published there yet. A generic self-hosted-client WebView app like this
-one is a real, common category on the Play Store (Home Assistant, Synology's
-DS app, Nextcloud, and others all work this way), so it's a plausible future
-step — but it needs its own separate effort (developer account, a hosted
-privacy policy, Play's Data Safety declaration, and likely a proper
-release-signed build rather than this debug one). Sideloading is the only
-distribution path for now.
+Currently available only via APK download. Bringing it to the Google Play
+Store is planned.
