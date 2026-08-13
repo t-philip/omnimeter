@@ -16,6 +16,6 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify src/__version__.py matches the pushed tag
         run: bash scripts/check_version.sh "${GITHUB_REF_NAME}"
