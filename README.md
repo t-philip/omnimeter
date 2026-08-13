@@ -52,10 +52,9 @@ why, and for how to read it in your own language anyway without any app changes.
 - **Zoom by dragging** — drag straight across any chart to narrow the date
   range to exactly the span you selected, no date-picker fiddling. See "Using
   the dashboard" below.
-- **Weather-correlated estimates** — solar self-sufficiency and gas usage are
-  reconciled against real daily weather (Open-Meteo shortwave radiation for
-  solar yield, temperature for heating-degree-days), not a flat seasonal
-  assumption.
+- **Weather-correlated solar estimates** — solar self-sufficiency is
+  reconciled against real daily weather (Open-Meteo shortwave radiation), not
+  a flat seasonal assumption.
 - **Tariff import, auto-detected** — upload a rate-sheet PDF and OmniMeter
   recognizes the format itself (nine supplier formats today); no supplier
   picker, no manual entry required. See "Settings" below.
