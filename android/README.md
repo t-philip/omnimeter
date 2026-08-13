@@ -8,6 +8,10 @@ pull into your OmniMeter install (see the main [README](../README.md)'s
 
 Package: `eu.tphilip.omnimeter`.
 
+**Requires an OmniMeter instance already running and reachable from your
+phone.** This app is a client only — it doesn't set one up for you. If you
+don't have one yet, see the main [README](../README.md)'s Quick Start first.
+
 ## Getting it
 
 **Download a build:** the latest [GitHub Release](https://github.com/t-philip/omnimeter/releases)
