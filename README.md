@@ -77,9 +77,9 @@ why, and for how to read it in your own language anyway without any app changes.
 |---|---|
 | [![Overview tab](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![Power tab](docs/screenshots/power.png)](docs/screenshots/power.png) |
 
-| Costs |
-|---|
-| [![Costs tab](docs/screenshots/costs.png)](docs/screenshots/costs.png) |
+| Costs | Gas — heating-degree-day correlation |
+|---|---|
+| [![Costs tab](docs/screenshots/costs.png)](docs/screenshots/costs.png) | [![Gas tab, showing usage spiking during a cold snap alongside the heating-demand rail](docs/screenshots/gas.png)](docs/screenshots/gas.png) |
 
 ## Compared to other P1 tools
 
