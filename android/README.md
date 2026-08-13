@@ -39,12 +39,6 @@ HTTPS by default (see the main README's "Deliberately not built" note), so
 `http://` is the expected, normal case here. If you've put your own reverse
 proxy with HTTPS in front of your instance, use `https://` instead.
 
-## Signing
-
-Built as a debug APK (the standard Android SDK debug key) — fine for
-sideloading, not intended for Play Store distribution as-is. There is no
-release-signing keystore in this repo.
-
 ## Play Store
 
 Currently available only via APK download. Bringing it to the Google Play
