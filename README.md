@@ -238,8 +238,9 @@ system-wide "select text → Translate" still works there, just manually per-sel
 
 A native Android client is available under [`android/`](android/) — a WebView
 shell pointed at your own instance (host/scheme/port set in-app, nothing
-hardcoded). Grab the latest APK from
-[Releases](https://github.com/t-philip/omnimeter/releases), or build it
+hardcoded). Grab the APK from the
+[`android-v*` releases](https://github.com/t-philip/omnimeter/releases/tag/android-v1.0.0)
+(versioned separately from this repo's regular releases), or build it
 yourself with `cd android && ./gradlew assembleDebug`. Sideload only for now —
 see [`android/README.md`](android/README.md) for install steps and the Play
 Store status.

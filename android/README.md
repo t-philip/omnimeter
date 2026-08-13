@@ -12,12 +12,19 @@ Package: `eu.tphilip.omnimeter`.
 phone.** This app is a client only — it doesn't set one up for you. If you
 don't have one yet, see the main [README](../README.md)'s Quick Start first.
 
+This app is versioned and released separately from the main OmniMeter web
+app — look for a release tagged `android-vX.Y.Z`, not the repo's regular
+`vX.Y.Z` releases (those are the web app; GitHub's "Latest release" badge
+usually points there, not here).
+
 ## Getting it
 
-**Download a build:** the latest [GitHub Release](https://github.com/t-philip/omnimeter/releases)
-has a debug-signed APK attached. Android will warn about installing from an
-"unknown source" — expected for anything not distributed via the Play Store;
-allow it for this app if you trust the download.
+**Download a build:** the [latest Android release](https://github.com/t-philip/omnimeter/releases/tag/android-v1.0.0)
+has a debug-signed APK attached (check the
+[full release list](https://github.com/t-philip/omnimeter/releases) for a
+newer `android-v*` tag if one exists). Android will warn about installing
+from an "unknown source" — expected for anything not distributed via the
+Play Store; allow it for this app if you trust the download.
 
 **Or build it yourself:**
 

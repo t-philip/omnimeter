@@ -1,0 +1,20 @@
+name: Check Android version on release tag
+
+# Same enforcement as check-version.yml, for the Android app's own,
+# independent release stream (android-vX.Y.Z tags -- see android/README.md
+# for why it's versioned separately from the main web app). Doesn't collide
+# with check-version.yml's "v*" trigger: that pattern requires the tag to
+# start with "v", and "android-v1.0.0" starts with "a".
+
+on:
+  push:
+    tags:
+      - "android-v*"
+
+jobs:
+  check-android-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify android/app/build.gradle.kts's versionName matches the pushed tag
+        run: bash scripts/check_android_version.sh "${GITHUB_REF_NAME}"
