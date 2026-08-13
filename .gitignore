@@ -14,3 +14,11 @@ __pycache__/
 # only .env is new/secret here.
 /.env
 /backups/
+
+# Android app -- build output and machine-local files, not source.
+android/**/build/
+android/.gradle/
+android/local.properties
+android/*.apk
+android/**/*.apk
+android/.idea/

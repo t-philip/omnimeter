@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Native Android 12+ splash screen, declarative only, no extra library needed,
+         keeping dependencies minimal per brief §6.1. Falls back to a plain launch (no splash)
+         on API 26-30, which is acceptable per §6.8's "simple splash" requirement. -->
+    <style name="Theme.OmniMeter" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/omnimeter_blue</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/omnimeter_blue</item>
+    </style>
+</resources>

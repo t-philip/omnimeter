@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- First-pass icon mark, mirrors the dashboard's own inline-SVG lightning-bolt favicon
+     (templates/index.html). Not yet approved, expect a revision round (brief §6.8). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,24 L38,60 L52,60 L48,84 L74,50 L58,50 Z" />
+</vector>

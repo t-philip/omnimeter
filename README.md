@@ -229,8 +229,20 @@ tooltips are the one thing no translator — browser-native or otherwise — can
 
 **On a phone.** The dashboard is responsive and works in a mobile browser — including
 translation (see "Language" above): open the URL directly in your phone's own
-Chrome/Edge and the same one-tap translate applies. No packaged Android app ships in
-this repo yet.
+Chrome/Edge and the same one-tap translate applies. Automatic translate is the one
+thing that doesn't carry over to the Android app below (it's a Chrome *application*
+feature, not part of the underlying WebView engine any app embeds) — Android's own
+system-wide "select text → Translate" still works there, just manually per-selection.
+
+## Android app
+
+A native Android client is available under [`android/`](android/) — a WebView
+shell pointed at your own instance (host/scheme/port set in-app, nothing
+hardcoded). Grab the latest APK from
+[Releases](https://github.com/t-philip/omnimeter/releases), or build it
+yourself with `cd android && ./gradlew assembleDebug`. Sideload only for now —
+see [`android/README.md`](android/README.md) for install steps and the Play
+Store status.
 
 ## Self-hosted configuration
 

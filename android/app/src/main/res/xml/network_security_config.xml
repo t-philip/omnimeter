@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is allowed for any host, not an allowlist of specific ones:
+  this app's target host is a runtime Settings value (see Prefs.kt), set to
+  whatever LAN address/hostname the user's own self-hosted OmniMeter instance
+  runs at. The web app itself has no built-in HTTPS by default (see the main
+  README's "Deliberately not built" note), so plain http:// is the expected,
+  common case, not an edge case to lock down. A user who fronts their own
+  instance with a reverse proxy can still select https:// in Settings.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
