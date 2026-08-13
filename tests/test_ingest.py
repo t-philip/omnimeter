@@ -358,6 +358,100 @@ class TestStripLeadingEmptyRows:
         assert ingest.strip_leading_empty_rows([]) == ([], 0)
 
 
+class TestStripTrailingEmptyRows:
+    """Drop a trailing run of all-zero readings -- export padding past the
+    last real reading. Same row shape as TestStripLeadingEmptyRows."""
+
+    def _row(self, t, *vals):
+        return (t, *vals, "daily")
+
+    def test_trailing_zero_run_dropped_outright(self):
+        # No anchor is retained, unlike the leading case -- nothing after the
+        # run has a delta that could depend on it.
+        values = [
+            self._row("2023-01-01 00:00", 56.0),
+            self._row("2023-01-02 00:00", 133.0),
+            self._row("2023-01-03 00:00", 0.0),
+            self._row("2023-01-04 00:00", 0.0),
+        ]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 2
+        assert [r[0] for r in kept] == ["2023-01-01 00:00", "2023-01-02 00:00"]
+
+    def test_drop_is_lossless(self):
+        values = [self._row("2023-01-01 00:00", 56.0), self._row("2023-01-02 00:00", 133.0)]
+        padded = values + [self._row(f"2023-01-{i:02d} 00:00", 0.0) for i in range(3, 8)]
+        kept, _ = ingest.strip_trailing_empty_rows(padded)
+
+        def total(rows):
+            return sum(max(0.0, b[1] - a[1]) for a, b in zip(rows, rows[1:], strict=False))
+
+        assert total(kept) == total(values)
+
+    def test_mid_series_zeros_kept(self):
+        # Only a *trailing* run is padding. A dip that recovers is a meter
+        # dropout, and clean_cumulative_glitches -- not this -- handles it.
+        values = [
+            self._row("2023-01-01 00:00", 56.0),
+            self._row("2023-01-02 00:00", 0.0),
+            self._row("2023-01-03 00:00", 133.0),
+        ]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 0
+        assert kept == values
+
+    def test_file_ending_with_real_data_untouched(self):
+        values = [
+            self._row("2023-01-01 00:00", 56.0),
+            self._row("2023-01-02 00:00", 133.0),
+        ]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 0
+        assert kept == values
+
+    def test_all_zero_file_left_for_leading_pass(self):
+        # Must NOT empty the list -- strip_leading_empty_rows runs after and
+        # still has to see the full run to retain its anchor.
+        values = [self._row(f"2023-01-{i:02d} 00:00", 0.0) for i in range(1, 6)]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 0
+        assert kept == values
+
+    def test_none_values_count_as_empty(self):
+        values = [
+            self._row("2023-01-01 00:00", 12.0),
+            self._row("2023-01-02 00:00", 0.0),
+            self._row("2023-01-03 00:00", None),
+        ]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 2
+        assert [r[0] for r in kept] == ["2023-01-01 00:00"]
+
+    def test_multi_column_row_needs_every_column_zero(self):
+        # A battery row's soc_pct can legitimately read 0 (empty battery);
+        # the row only counts as padding if the cumulative columns are 0 too.
+        values = [
+            self._row("2023-01-01 00:00", 4.0, 2.0, 50.0),
+            self._row("2023-01-02 00:00", 4.0, 2.0, 0.0),  # discharged, still real
+            self._row("2023-01-03 00:00", 0.0, 0.0, 0.0),
+        ]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 1
+        assert [r[0] for r in kept] == ["2023-01-01 00:00", "2023-01-02 00:00"]
+
+    def test_empty_input(self):
+        assert ingest.strip_trailing_empty_rows([]) == ([], 0)
+
+    def test_mid_day_export_padding_shape(self):
+        # The shape that motivated this: a mid-day export padding every
+        # remaining fifteen-minute slot of the day with 0.
+        values = [("2023-01-01 11:00", 40000.0, "15min")]
+        values += [(f"2023-01-01 {11 + i // 4:02d}:{15 * (i % 4):02d}", 0.0, "15min") for i in range(1, 52)]
+        kept, dropped = ingest.strip_trailing_empty_rows(values)
+        assert dropped == 51
+        assert kept == [("2023-01-01 11:00", 40000.0, "15min")]
+
+
 class TestGenericCsvFormat:
     """Vendor-neutral import: the way data from a meter this app has no
     driver for gets in at all. Columns are the *_readings column names, so

@@ -294,6 +294,43 @@ def strip_leading_empty_rows(values: list[tuple]) -> tuple[list[tuple], int]:
     return values[first_real - 1 :], first_real - 1
 
 
+def strip_trailing_empty_rows(values: list[tuple]) -> tuple[list[tuple], int]:
+    """Drop a trailing run of all-zero readings. Returns (kept_rows,
+    dropped_count). Mirror of strip_leading_empty_rows above, for the other
+    end of the file.
+
+    An export taken mid-day pads its remaining slots with zeros. Because
+    these columns are cumulative counters, a reading of exactly 0 *after* a
+    nonzero one is not a value the meter can produce -- a counter only
+    returns to zero on replacement, and a replacement then counts back up,
+    which would leave nonzero rows after the run and so not a trailing run
+    at all. A trailing all-zero run is therefore unambiguously padding.
+
+    Stored as-is it reads as one enormous negative delta. The rollup already
+    skips negative deltas so totals stay exact, but the per-granularity
+    diagnostic sees a drop with no recovery inside the series and reports a
+    phantom meter reset. This came up in practice: a water export taken
+    mid-day padded its remaining fifty-odd fifteen-minute slots with 0 and
+    produced exactly that false positive. Any user exporting a period before
+    it has fully elapsed hits the same thing.
+
+    Unlike the leading case this needs NO anchor row. A leading run has to
+    keep one, because the first real reading's delta is measured against it.
+    A trailing run has nothing after it whose delta could depend on it -- the
+    next real data arrives at a different granularity, and granularities are
+    deliberately never paired (see find_negative_deltas). So the run is
+    removed outright, and it is lossless in the same sense: consecutive
+    zeros produce no deltas the rollup uses.
+
+    Returns values untouched when no row is real, leaving the all-zero file
+    to strip_leading_empty_rows' anchor branch -- this runs first, so that
+    branch must still see the full run rather than an already-emptied list."""
+    last_real = next((i for i in range(len(values) - 1, -1, -1) if not _is_empty_row(values[i])), None)
+    if last_real is None:
+        return values, 0
+    return values[: last_real + 1], len(values) - 1 - last_real
+
+
 _IMPORT_TOGGLE_COLUMN = {
     "power": "import_power_enabled",
     "gas": "import_gas_enabled",
@@ -374,6 +411,14 @@ def ingest_file(conn: sqlite3.Connection, path: Path) -> int:
     # Runs after the header check above, not before: an all-None file is a
     # parse failure that must still raise, whereas an all-zero file is a
     # legitimate export of a period before the meter existed.
+    # Trailing before leading: the leading pass collapses an all-zero file to a
+    # single anchor row, and the trailing pass must not have emptied it first.
+    values, dropped_tail = strip_trailing_empty_rows(values)
+    if dropped_tail:
+        print(
+            f"{path.name}: dropped {dropped_tail} trailing all-zero row(s) -- export "
+            "padding past the last real reading (totals unchanged)"
+        )
     values, dropped = strip_leading_empty_rows(values)
     if dropped:
         print(

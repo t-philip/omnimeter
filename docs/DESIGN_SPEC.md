@@ -147,6 +147,28 @@ CSV import raises. A file uploaded through the web UI is then moved to
 `data/imports/failed/`; one dropped into the dropzone directory stays where it
 is and is reported on each scan, so fixing it in place is enough.
 
+#### Export padding
+
+A vendor export does not always honour that distinction: it can pad slots it
+has no reading for with `0`. Because the meter columns are cumulative
+counters, such a run is recognisable as padding rather than data and is
+removed at ingest, at both ends of a file:
+
+- **Leading run** — the meter had not registered anything yet (an export
+  covering a period before it was installed). Collapsed to a single anchor
+  row, which preserves the one genuine delta: a new meter counting up from
+  zero for the first time.
+- **Trailing run** — an export taken mid-period, padding the slots after its
+  last real reading. Removed outright; nothing after the run has a delta that
+  could depend on it, so no anchor is needed.
+
+Both are lossless — consecutive zeros contribute no deltas — and each logs the
+number of rows dropped. A run is only treated as padding when *every* value
+column in the row is absent or zero, so a genuine reading of zero in one
+column (an empty battery's state of charge, say) is never mistaken for it.
+Zeros *between* real readings are left alone: those are a meter dropout, and
+the cumulative-series glitch pass handles them.
+
 ---
 
 ## 4. Data model
