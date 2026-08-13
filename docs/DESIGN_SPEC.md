@@ -27,8 +27,8 @@ solar self-sufficiency figure, and data-quality reporting over the history.
   read-only visualisation plus the configuration that feeds it.
 - **No multi-user accounts.** One household, one dashboard. The write token
   (§6) is the only access control and is a shared secret, not per-user.
-- **No cloud dependency.** The single outbound call — weather, §5 — is opt-in
-  and off by default.
+- **No cloud dependency.** Two outbound calls exist — weather (§5) and an
+  opt-in GitHub release check — both off by default and independently gated.
 - **No HTTPS or reverse proxy built in.** Put your own in front of it if you
   need it reachable beyond your LAN.
 
@@ -206,7 +206,13 @@ the app at startup** rather than timestamping data in the wrong zone.
 
 ---
 
-## 5. Solar estimation
+## 5. Weather-derived estimates
+
+Two independent uses of the same daily Open-Meteo fetch (`weather_daily`),
+covering different tabs. Neither adds a second network call — both are
+derived from the one fetch driven by `weather_enabled`.
+
+### 5.1 Solar estimation
 
 Most inverters aren't reachable locally, so production is **estimated, never
 measured**, and must always be labelled as such.
@@ -220,10 +226,30 @@ measured**, and must always be labelled as such.
   redistribution rather than a physical model, so it cannot drift from a
   calibrated annual total and needs no panel orientation or shading data.
 
-Weather is the only outbound network call, gated off by default so a user opts
-in knowingly. Coordinates are rounded before use (~11 km by default, against a
-~9 km source grid). Open-Meteo data is CC BY 4.0 and the credit is shown
-wherever it appears.
+### 5.2 Gas heating-degree-day correlation
+
+The Gas tab's chart carries a "Heating demand" rail (same visual mechanic as
+the solar rail below), driven by heating-degree-days computed from
+`temperature_2m_mean`: `max(0, 18°C − mean_temp)`, floored at zero on days
+mild enough that heating wouldn't be running. 18°C is the NOAA/international
+convention (65°F), a fixed constant rather than a per-install setting —
+nothing in OmniMeter has grounds to tune it without the household's own
+gas-vs-temperature data to calibrate against. Unlike solar production, this is
+presented as **context alongside the real reading**, never a modelled
+estimate of gas usage itself — no gas figure is derived or adjusted, the rail
+only shows how cold each day was relative to what's typical for that date
+(`src/weather.py`'s `typical_heating_degree_days_by_day_of_year`, the same
+seasonal-median pooling section 5.1's "typical radiation" reference already
+uses).
+
+### 5.3 Network and licensing
+
+Weather (used by both 5.1 and 5.2) and the update check (`src/update_check.py`,
+not otherwise documented in this spec) are the app's only two outbound calls,
+each gated off by default so a user opts in knowingly. Weather coordinates
+are rounded before use (~11 km by default, against a ~9 km source grid).
+Open-Meteo data is CC BY 4.0 and the credit is shown wherever any
+weather-derived value appears, solar or gas alike.
 
 ---
 

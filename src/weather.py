@@ -235,28 +235,25 @@ def radiation_by_date(conn: sqlite3.Connection, date_from: str, date_to: str) ->
     }
 
 
-def typical_radiation_by_day_of_year(conn: sqlite3.Connection) -> dict[str, float]:
-    """{MM-DD: median radiation within +/-TYPICAL_WINDOW_DAYS across all
-    years held}.
+def _typical_by_day_of_year(values_by_date: dict[str, float]) -> dict[str, float]:
+    """{MM-DD: median value within +/-TYPICAL_WINDOW_DAYS across all years
+    held}. Shared pooling core for both typical_radiation_by_day_of_year and
+    typical_heating_degree_days_by_day_of_year below -- same "what's normal
+    for this date" question, asked of two different daily metrics.
 
-    "Typical" has to be seasonal, not a flat average: this location swings
-    from ~2.0 MJ/m2 in December to ~22.6 in June, a factor of ~11. An
-    absolute number carries no meaning without that context -- 4 hours of sun
-    is dismal in June and above average in December -- which is exactly why
-    the UI shows a percentage of typical rather than a raw figure.
-
-    Median, not mean, so one freak day cannot move the reference."""
-    rows = conn.execute(
-        "SELECT date, shortwave_radiation_sum AS v FROM weather_daily "
-        "WHERE shortwave_radiation_sum IS NOT NULL"
-    ).fetchall()
-    if not rows:
+    "Typical" has to be seasonal, not a flat average: this location's
+    radiation swings from ~2.0 MJ/m2 in December to ~22.6 in June, a factor
+    of ~11 -- an absolute number carries no meaning without that context,
+    which is exactly why the UI shows a percentage of typical rather than a
+    raw figure. Median, not mean, so one freak day cannot move the
+    reference."""
+    if not values_by_date:
         return {}
 
     by_doy: dict[int, list[float]] = {}
-    for r in rows:
-        d = datetime.strptime(r["date"], "%Y-%m-%d").date()
-        by_doy.setdefault(d.timetuple().tm_yday, []).append(r["v"])
+    for date_str, v in values_by_date.items():
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        by_doy.setdefault(d.timetuple().tm_yday, []).append(v)
 
     typical: dict[str, float] = {}
     for doy in range(1, 367):
@@ -274,3 +271,68 @@ def typical_radiation_by_day_of_year(conn: sqlite3.Connection) -> dict[str, floa
         key = (datetime(2024, 1, 1) + timedelta(days=doy - 1)).strftime("%m-%d")
         typical[key] = median
     return typical
+
+
+def typical_radiation_by_day_of_year(conn: sqlite3.Connection) -> dict[str, float]:
+    rows = conn.execute(
+        "SELECT date, shortwave_radiation_sum AS v FROM weather_daily "
+        "WHERE shortwave_radiation_sum IS NOT NULL"
+    ).fetchall()
+    return _typical_by_day_of_year({r["date"]: r["v"] for r in rows})
+
+
+# Base temperature for heating-degree-days: the widely-used NOAA/international
+# convention (65 F = 18.3 C, commonly rounded to 18 C) -- below this, a
+# household is assumed to be running its heating. Deliberately not exposed as
+# an env var, same reasoning as solar_estimate.py's DEFAULT_SPECIFIC_YIELD:
+# one documented default beats a config knob nobody has grounds to tune
+# without their own gas-vs-temperature data to calibrate against.
+DEFAULT_HDD_BASE_C = 18.0
+
+
+def heating_degree_days(mean_temp_c: float | None, base_c: float = DEFAULT_HDD_BASE_C) -> float | None:
+    """Degrees the day's mean temperature fell below base_c, floored at 0 --
+    zero on a day mild enough that heating wouldn't be running. This is the
+    reason temperature_2m_mean is stored at all (see db.py's schema
+    comment): it explains gas usage far better than a flat seasonal curve,
+    the same problem shortwave_radiation_sum solves for solar above."""
+    if mean_temp_c is None:
+        return None
+    return max(0.0, base_c - mean_temp_c)
+
+
+def heating_degree_days_by_date(
+    conn: sqlite3.Connection, date_from: str, date_to: str, base_c: float = DEFAULT_HDD_BASE_C
+) -> dict[str, float]:
+    # heating_degree_days() is Optional-in/Optional-out (a single reading may
+    # be missing), but the WHERE clause here already excludes NULL means --
+    # narrowed explicitly below so the dict stays float-only for callers.
+    result: dict[str, float] = {}
+    for r in conn.execute(
+        "SELECT date, temperature_2m_mean FROM weather_daily "
+        "WHERE date >= ? AND date <= ? AND temperature_2m_mean IS NOT NULL",
+        (date_from, date_to),
+    ):
+        hdd = heating_degree_days(r["temperature_2m_mean"], base_c)
+        if hdd is not None:
+            result[r["date"]] = hdd
+    return result
+
+
+def typical_heating_degree_days_by_day_of_year(
+    conn: sqlite3.Connection, base_c: float = DEFAULT_HDD_BASE_C
+) -> dict[str, float]:
+    """Same seasonal-median reasoning as typical_radiation_by_day_of_year,
+    applied to heating-degree-days instead of radiation -- so a cold day in
+    October (unusual, heating season hasn't started) and an equally cold day
+    in January (routine) read differently, the same way an equally sunny day
+    in June and December already do."""
+    rows = conn.execute(
+        "SELECT date, temperature_2m_mean AS v FROM weather_daily WHERE temperature_2m_mean IS NOT NULL"
+    ).fetchall()
+    values_by_date: dict[str, float] = {}
+    for r in rows:
+        hdd = heating_degree_days(r["v"], base_c)
+        if hdd is not None:
+            values_by_date[r["date"]] = hdd
+    return _typical_by_day_of_year(values_by_date)

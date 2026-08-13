@@ -1129,6 +1129,38 @@ def create_app() -> Flask:
             )
         return jsonify({"available": True, "days": days, "attribution": weather.ATTRIBUTION})
 
+    @app.route("/api/weather/gas")
+    def api_weather_gas():
+        # Per-day heating-degree-days for the Gas chart rail -- same shape
+        # and same "vs typical for this date" framing as /api/weather/daily
+        # above, computed from temperature instead of radiation.
+        conn = get_conn()
+        if not weather.weather_enabled(conn):
+            return jsonify({"available": False, "days": [], "attribution": None})
+        f, t = date_range_args()
+        hdd = weather.heating_degree_days_by_date(conn, f, t)
+        if not hdd:
+            return jsonify({"available": False, "days": [], "attribution": None})
+        typical = weather.typical_heating_degree_days_by_day_of_year(conn)
+        days = []
+        for d in sorted(hdd):
+            ref = typical.get(d[5:])
+            days.append(
+                {
+                    "date": d,
+                    "hdd": round(hdd[d], 1),
+                    "pct_of_typical": round(hdd[d] / ref * 100, 0) if ref else None,
+                }
+            )
+        return jsonify(
+            {
+                "available": True,
+                "days": days,
+                "attribution": weather.ATTRIBUTION,
+                "base_temp_c": weather.DEFAULT_HDD_BASE_C,
+            }
+        )
+
     @app.route("/api/consumption-notes")
     def api_consumption_notes():
         # Episodes whose usage sat far outside their own recent baseline,

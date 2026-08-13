@@ -224,3 +224,96 @@ class TestReferenceAndTypical:
         self._seed(conn, {"2026-07-01": 20.0, "2026-07-05": 25.0, "2026-08-01": 18.0})
         got = weather.radiation_by_date(conn, "2026-07-01", "2026-07-31")
         assert sorted(got) == ["2026-07-01", "2026-07-05"]
+
+
+class TestHeatingDegreeDays:
+    def test_below_base_is_positive(self):
+        assert weather.heating_degree_days(10.0, base_c=18.0) == pytest.approx(8.0)
+
+    def test_above_base_floors_at_zero(self):
+        # A mild day needs no heating -- must not go negative.
+        assert weather.heating_degree_days(22.0, base_c=18.0) == 0.0
+
+    def test_at_base_is_zero(self):
+        assert weather.heating_degree_days(18.0, base_c=18.0) == 0.0
+
+    def test_none_temperature_returns_none(self):
+        assert weather.heating_degree_days(None) is None
+
+    def test_default_base_is_18c(self):
+        assert weather.heating_degree_days(10.0) == weather.heating_degree_days(10.0, base_c=18.0)
+        assert weather.DEFAULT_HDD_BASE_C == 18.0
+
+
+class TestHeatingDegreeDaysByDate:
+    def _seed_temps(self, conn, mean_temp_by_date):
+        weather.store(
+            conn,
+            [
+                {
+                    "date": d,
+                    "shortwave_radiation_sum": None,
+                    "sunshine_duration": None,
+                    "temperature_2m_max": None,
+                    "temperature_2m_min": None,
+                    "temperature_2m_mean": t,
+                }
+                for d, t in mean_temp_by_date.items()
+            ],
+            52.3,
+            4.9,
+        )
+
+    def test_computes_per_date(self, conn):
+        self._seed_temps(conn, {"2026-01-05": 2.0, "2026-01-06": 20.0})
+        got = weather.heating_degree_days_by_date(conn, "2026-01-01", "2026-01-31")
+        assert got["2026-01-05"] == pytest.approx(16.0)
+        assert got["2026-01-06"] == 0.0
+
+    def test_respects_range(self, conn):
+        self._seed_temps(conn, {"2026-01-05": 2.0, "2026-02-05": 2.0})
+        got = weather.heating_degree_days_by_date(conn, "2026-01-01", "2026-01-31")
+        assert list(got) == ["2026-01-05"]
+
+    def test_empty_when_no_temperature_data(self, conn):
+        assert weather.heating_degree_days_by_date(conn, "2026-01-01", "2026-01-31") == {}
+
+
+class TestTypicalHeatingDegreeDays:
+    def _seed_temps(self, conn, mean_temp_by_date):
+        weather.store(
+            conn,
+            [
+                {
+                    "date": d,
+                    "shortwave_radiation_sum": None,
+                    "sunshine_duration": None,
+                    "temperature_2m_max": None,
+                    "temperature_2m_min": None,
+                    "temperature_2m_mean": t,
+                }
+                for d, t in mean_temp_by_date.items()
+            ],
+            52.3,
+            4.9,
+        )
+
+    def test_typical_is_seasonal_not_flat(self, conn):
+        # Same reasoning as TestReferenceAndTypical.test_typical_is_seasonal_not_flat:
+        # a cold December must read as normal, a cold June must not.
+        from datetime import date as _date
+        from datetime import timedelta as _td
+
+        rows = {}
+        for i in range(60):
+            rows[(_date(2025, 12, 1) + _td(days=i)).isoformat()] = 2.0
+        for i in range(60):
+            rows[(_date(2026, 6, 1) + _td(days=i)).isoformat()] = 22.0
+        self._seed_temps(conn, rows)
+
+        typical = weather.typical_heating_degree_days_by_day_of_year(conn)
+        assert typical["12-15"] == pytest.approx(16.0)  # 18 - 2
+        assert typical["06-15"] == pytest.approx(0.0)  # 18 - 22, floored at 0
+
+    def test_empty_when_no_temperature_data(self, conn):
+        assert weather.typical_heating_degree_days_by_day_of_year(conn) == {}

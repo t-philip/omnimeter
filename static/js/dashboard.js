@@ -411,6 +411,113 @@
     );
   }
 
+  // Same rail mechanic as sunRailPlugin above, driven by heating-degree-days
+  // instead of radiation -- taller means colder (more heating demand) than
+  // that date usually gets. Kept as its own function rather than sharing
+  // sunRailPlugin's body: the two are only ever used on different tabs (this
+  // one never appears alongside the sun rail), and duplicating this
+  // self-contained canvas-drawing routine is a smaller risk than reworking
+  // an already-live one with no automated visual-regression coverage.
+  // Reuses --series-weather-sun rather than a new palette entry -- both
+  // rails mean "this is weather context, not a data series", the same
+  // relationship --series-occupancy already has across Gas/Water/Power, and
+  // this repo's palette is dE-validated per pairing, not free to extend
+  // without re-running that check.
+  function gasHeatingRailPlugin(labels, weatherDays) {
+    const pctByDate = new Map((weatherDays || []).map((d) => [d.date, d.pct_of_typical]));
+    const hddByDate = new Map((weatherDays || []).map((d) => [d.date, d.hdd]));
+    const state = { visible: true };
+
+    const plugin = {
+      id: "gasHeatingRail",
+
+      beforeInit(chart) {
+        const tooltip = (chart.options.plugins.tooltip ||= {});
+        const callbacks = (tooltip.callbacks ||= {});
+        const prevAfterBody = callbacks.afterBody;
+        callbacks.afterBody = (items) => {
+          const prev = prevAfterBody ? prevAfterBody(items) : "";
+          if (!state.visible || !items.length) return prev;
+          const label = labels[items[0].dataIndex];
+          const pct = pctByDate.get(label);
+          if (pct == null) return prev;
+          const hdd = hddByDate.get(label);
+          const line = `Heating demand: ${Math.round(pct)}% of typical${hdd != null ? ` (${hdd.toFixed(1)} HDD)` : ""}`;
+          return prev ? `${prev}\n${line}` : line;
+        };
+      },
+
+      beforeDatasetsDraw(chart) {
+        if (!state.visible || !labels.length || !pctByDate.size) return;
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        if (!chartArea || !xScale) return;
+        const step = labels.length > 1 ? xScale.getPixelForValue(1) - xScale.getPixelForValue(0) : xScale.width;
+        const barW = Math.max(1, Math.min(step * 0.7, 14));
+        const railMax = Math.min(24, (chartArea.bottom - chartArea.top) * SUN_RAIL_FRACTION);
+        const typicalY = chartArea.bottom - railMax / 2;
+
+        ctx.save();
+
+        ctx.strokeStyle = cssVar("--text-muted");
+        ctx.globalAlpha = 0.75;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, typicalY);
+        ctx.lineTo(chartArea.right, typicalY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = cssVar("--series-weather-sun");
+        ctx.globalAlpha = 0.65;
+        labels.forEach((label, i) => {
+          const pct = pctByDate.get(label);
+          if (pct == null) return;
+          const h = (railMax * Math.max(0, Math.min(200, pct))) / 200;
+          if (h <= 0) return;
+          ctx.fillRect(xScale.getPixelForValue(i) - barW / 2, chartArea.bottom - h, barW, h);
+        });
+        ctx.restore();
+      },
+    };
+
+    plugin.isGasHeatingRail = true;
+    plugin.setVisible = (v) => {
+      state.visible = v;
+    };
+    return plugin;
+  }
+
+  async function fetchGasWeatherDays() {
+    const { from, to } = rangeParams();
+    try {
+      const data = await fetchJson(`/api/weather/gas?from=${from}&to=${to}`);
+      return data.available ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function setGasHeatingRailHint(elId, weather) {
+    const el = document.getElementById(elId);
+    if (el) el.innerHTML = gasHeatingRailHint(weather);
+  }
+
+  function gasHeatingRailHint(weather) {
+    if (!weather) return "";
+    return (
+      `<p class="chart-hint sun-key">` +
+      `<span class="sun-key-swatch"></span> Daily heating demand ` +
+      `<span class="sun-key-line"></span> = typical for that date ` +
+      `&mdash; taller means colder than that date usually gets (heating-degree-days below ` +
+      `${weather.base_temp_c}&deg;C). Hover a day for the figure; switch it off with the ` +
+      `Heating demand toggle below the chart. ` +
+      `<a href="${escHtml(weather.attribution.url)}" target="_blank" rel="noopener">` +
+      `${escHtml(weather.attribution.text)}</a></p>`
+    );
+  }
+
   // A chart with zero rows for the period, or rows that are all-null (a data
   // gap covering the whole range), renders as an indistinguishable blank
   // canvas otherwise -- looks identical to a broken chart. Centralized here
@@ -482,7 +589,12 @@
         elements: { line: { borderWidth: 2, tension: 0.15 }, point: { radius: 2, hoverRadius: 4 } },
       },
     });
-    renderChartToggles(canvasId, charts[canvasId], datasets, sunToggleFor(extraPlugins));
+    renderChartToggles(
+      canvasId,
+      charts[canvasId],
+      datasets,
+      [...sunToggleFor(extraPlugins), ...gasHeatingToggleFor(extraPlugins)]
+    );
   }
 
   // Explicit on/off switches per series, replacing Chart.js's built-in
@@ -552,6 +664,15 @@
     const rail = (extraPlugins || []).find((p) => p && p.isSunRail);
     if (!rail) return [];
     return [{ label: "Sunshine", color: cssVar("--series-weather-sun"), onChange: (on) => rail.setVisible(on) }];
+  }
+
+  // Same idea as sunToggleFor, for the Gas tab's heating-degree-day rail.
+  function gasHeatingToggleFor(extraPlugins) {
+    const rail = (extraPlugins || []).find((p) => p && p.isGasHeatingRail);
+    if (!rail) return [];
+    return [
+      { label: "Heating demand", color: cssVar("--series-weather-sun"), onChange: (on) => rail.setVisible(on) },
+    ];
   }
 
   function seriesDataset(label, data, colorVar, extra = {}) {
@@ -2059,17 +2180,21 @@
   // ---- Gas ----
   async function loadGas() {
     const { from, to } = rangeParams();
-    const [rows, occupancy] = await Promise.all([
+    const [rows, occupancy, gasWeather] = await Promise.all([
       fetchJson(`/api/gas/daily?from=${from}&to=${to}`),
       fetchJson("/api/settings/occupancy"),
+      fetchGasWeatherDays(),
     ]);
     const labels = rows.map((r) => r.date);
+    const extraPlugins = [occupancyOverlayPlugin(labels, occupancy)];
+    if (gasWeather) extraPlugins.push(gasHeatingRailPlugin(labels, gasWeather.days));
     lineChart(
       "chart-gas",
       labels,
       [seriesDataset("Gas (m3)", rows.map((r) => r.usage_m3), "--series-gas")],
-      [occupancyOverlayPlugin(labels, occupancy)]
+      extraPlugins
     );
+    setGasHeatingRailHint("gas-weather-hint", gasWeather);
     renderChartAvg("gas-avg", [{ label: "Avg", value: fmtAvg(avg(rows, "usage_m3"), 2, "m3/day") }]);
     const totalGas = rows.reduce((s, r) => s + (r.usage_m3 || 0), 0);
     renderSourcesTable("gas-sources", [{ label: "Gas", value: `${totalGas.toFixed(2)} m3`, colorVar: "--series-gas" }]);
