@@ -1934,6 +1934,26 @@ class TestEnergyFlow:
         assert body["days"][0]["date"] == "2026-05-01"
         assert body["days"][0]["basis"] in ("weather", "seasonal")
 
+    def test_self_sufficiency_today_in_progress_flag(self, client):
+        from src import db
+
+        today = date.today().isoformat()
+        conn = db.get_connection()
+        db.init_db(conn)
+        conn.execute("INSERT INTO pv_config (id, kwp_rating) VALUES (1, 2.5)")
+        conn.execute(
+            "INSERT INTO power_daily (date, import_kwh, export_kwh, net_kwh) VALUES (?, 8.0, 3.0, 5.0)",
+            (today,),
+        )
+        conn.commit()
+        conn.close()
+
+        resp = client.get(f"/api/self-sufficiency?from={today}&to={today}")
+        assert resp.get_json()["today_in_progress"] is True
+
+        resp = client.get("/api/self-sufficiency?from=2026-05-01&to=2026-05-01")
+        assert resp.get_json()["today_in_progress"] is False
+
     def test_per_day_allocation_not_period_totals(self, client):
         # No PV needed to reproduce this -- battery + grid alone show it.
         # Day 1: battery discharge (15) covers that day's own load (10) and
@@ -1970,6 +1990,30 @@ class TestEnergyFlow:
             for f in flows
         )
         assert not any(f["from"] == "grid_in" and f["to"] == "grid_out" for f in flows)
+
+    def test_today_in_progress_flagged_for_a_range_ending_today(self, client):
+        # solar_estimate.estimate_daily_production() has no elapsed-time
+        # concept -- it always returns a whole day's projected total, so a
+        # range that includes today's still-accumulating row needs a flag
+        # the frontend can use to label that figure as a projection rather
+        # than a settled total (see src/solar_estimate.py's own docstring).
+        from src import db
+
+        today = date.today().isoformat()
+        conn = db.get_connection()
+        db.init_db(conn)
+        conn.execute(
+            "INSERT INTO power_daily (date, import_kwh, export_kwh, net_kwh) VALUES (?, 8.0, 3.0, 5.0)",
+            (today,),
+        )
+        conn.commit()
+        conn.close()
+
+        resp = client.get(f"/api/energy-flow?from={today}&to={today}")
+        assert resp.get_json()["today_in_progress"] is True
+
+        resp = client.get("/api/energy-flow?from=2026-05-01&to=2026-05-01")
+        assert resp.get_json()["today_in_progress"] is False
 
     def test_fallback_kwh_reaches_the_response(self, client):
         from src import db

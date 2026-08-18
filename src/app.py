@@ -360,6 +360,15 @@ def create_app() -> Flask:
         t = request.args.get("to", today.isoformat())
         return f, t
 
+    def _today_local() -> str:
+        # solar_estimate.estimate_daily_production() has no concept of
+        # elapsed time within a day -- it always returns that whole
+        # calendar day's projected total. Callers showing today's own row
+        # (the "Today" preset, or any range ending today) need to know
+        # that figure is a full-day projection, not an actual, so the
+        # frontend can label it rather than present it as a settled total.
+        return datetime.now(_LOCAL_TZ).date().isoformat()
+
     @app.route("/")
     def index():
         # Energy-flow diagram's house-node label, was
@@ -604,6 +613,7 @@ def create_app() -> Flask:
                 }
             )
         weather_days = sum(1 for r in results if r["basis"] == "weather")
+        today_in_progress = any(r["date"] == _today_local() for r in results)
 
         # How sunny this period actually was, against what that same slice of
         # the calendar normally gets. Compared date-for-date rather than as a
@@ -629,6 +639,7 @@ def create_app() -> Flask:
                 "weather_attribution": weather.ATTRIBUTION if weather_days else None,
                 "weather_days": weather_days,
                 "sun_pct_of_typical": sun_pct,
+                "today_in_progress": today_in_progress,
             }
         )
 
@@ -682,6 +693,7 @@ def create_app() -> Flask:
 
         matrix = aggregate.sum_energy_flow_matrices(daily_matrices)
         matrix["pv_configured"] = pv_configured
+        matrix["today_in_progress"] = any(r["date"] == _today_local() for r in power_rows)
         if not daily_matrices:
             # sum_energy_flow_matrices([]) omits sources/uses keys entirely
             # (nothing to sum) -- the frontend expects the full shape even
