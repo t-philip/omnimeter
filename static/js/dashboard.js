@@ -2,6 +2,7 @@
   "use strict";
 
   const RANGE_PRESETS = [
+    { label: "Today", days: 0 },
     { label: "1d", days: 1 },
     { label: "2d", days: 2 },
     { label: "7d", days: 7 },
@@ -1937,6 +1938,15 @@
             const { from, to } = currentFiscalYearRange(fy.month, fy.day);
             state.customFrom = from;
             state.customTo = to;
+          } else if (preset.label === "Today") {
+            // Calendar-day-so-far, not a trailing 24h window: from and to
+            // both resolve to today's date, so the API returns just today's
+            // (still-accumulating) daily row -- same "always becomes custom"
+            // pattern "1y" uses above, for the same reason (a fixed preset.days
+            // can't express "midnight to now").
+            const t = fmtDate(new Date());
+            state.customFrom = t;
+            state.customTo = t;
           } else {
             state.rangeDays = preset.days;
             state.customFrom = null;
