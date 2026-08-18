@@ -1745,6 +1745,11 @@
     if (data.pv_configured === false) {
       notes += `<p class="chart-hint">No solar production shown — configure a PV system under Settings &rarr; System to include it.</p>`;
     }
+    if (data.today_in_progress) {
+      notes +=
+        `<p class="chart-hint">Today isn't over yet — solar has no elapsed-time model, so its figure above is ` +
+        `a projection for the whole day, not what's actually been produced so far.</p>`;
+    }
     const totalUses = useKeys.reduce((sum, k) => sum + ((data.uses && data.uses[k]) || 0), 0);
     if (data.fallback_kwh > 0.05 && totalUses > 0) {
       const pct = Math.round((data.fallback_kwh / totalUses) * 100);
@@ -2311,6 +2316,12 @@
           <div class="chart-avg" id="sufficiency-avg"></div>
         </div>
         <p class="chart-hint">Basis: ${escHtml(basisNote)}.</p>
+        ${
+          data.today_in_progress
+            ? `<p class="chart-hint">Today isn't over yet — its solar and self-sufficiency figures are a ` +
+              `projection for the whole day, not what's actually happened so far.</p>`
+            : ""
+        }
         ${
           data.sun_pct_of_typical != null
             ? `<p class="sun-readout">Sun this period ${sunMeter(data.sun_pct_of_typical)} ` +
