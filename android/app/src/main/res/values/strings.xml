@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OmniMeter</string>
+
+    <string name="error_title">Can\'t reach OmniMeter</string>
+    <string name="error_message_generic">The dashboard couldn\'t be loaded. Check that your device can reach the address below -- same Wi-Fi/LAN as your OmniMeter instance, or however you\'ve set up remote access to it.</string>
+    <string name="retry">Retry</string>
+    <string name="settings">Settings</string>
+
+    <string name="menu_settings">Settings</string>
+
+    <string name="settings_title">Connection settings</string>
+    <string name="settings_scheme">Scheme</string>
+    <string name="settings_host">Host</string>
+    <string name="settings_port">Port</string>
+    <string name="settings_base_url_label">Will connect to:</string>
+    <string name="settings_cleartext_note">OmniMeter has no built-in HTTPS by default, so http:// is expected and works here. If you\'ve put your own reverse proxy with HTTPS in front of your instance, use https:// instead.</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_invalid_host">Host cannot be empty</string>
+    <string name="settings_invalid_port">Port must be between 1 and 65535</string>
+</resources>

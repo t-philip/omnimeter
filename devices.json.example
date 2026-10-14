@@ -1,0 +1,26 @@
+{
+  "p1": {
+    "ip": "REPLACE_ME",
+    "serial": "REPLACE_ME",
+    "product_type": "p1dongle",
+    "token_env": "OMNIMETER_P1_TOKEN",
+    "protocol": "v2",
+    "verify_hostname": null
+  },
+  "battery": {
+    "ip": "REPLACE_ME",
+    "serial": "REPLACE_ME",
+    "product_type": "battery",
+    "token_env": "OMNIMETER_BATTERY_TOKEN",
+    "protocol": "v2",
+    "verify_hostname": null
+  },
+  "watermeter": {
+    "ip": "REPLACE_ME",
+    "serial": "REPLACE_ME",
+    "product_type": "watermeter",
+    "token_env": "OMNIMETER_WATERMETER_TOKEN",
+    "protocol": "v1",
+    "verify_hostname": null
+  }
+}

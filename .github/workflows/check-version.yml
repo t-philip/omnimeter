@@ -1,0 +1,20 @@
+name: Check version on release tag
+
+# Enforces scripts/check_version.sh's own rule automatically, server-side,
+# on every tag push. src/__version__.py can silently drift behind its own
+# tags if nothing checks it; the script alone only documents that you are
+# supposed to run it. This doesn't rely on anyone remembering to run it
+# locally before tagging.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify src/__version__.py matches the pushed tag
+        run: bash scripts/check_version.sh "${GITHUB_REF_NAME}"

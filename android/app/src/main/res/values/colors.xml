@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the dashboard's own series-power-import chart color (static/css/style.css) -->
+    <color name="omnimeter_blue">#2A78D6</color>
+    <color name="ic_launcher_background">#2A78D6</color>
+</resources>

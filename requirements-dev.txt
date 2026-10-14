@@ -1,0 +1,17 @@
+-r requirements.txt
+iniconfig==2.3.0
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==9.1.1
+# Lint + type-check baseline. See pyproject.toml for
+# config. Run: .venv/bin/python -m ruff check . && .venv/bin/python -m mypy src/ scripts/ wsgi.py
+ruff==0.15.22
+mypy==2.3.0
+mypy-extensions==1.1.0
+typing_extensions==4.16.0
+# Only needed on Windows: Ubuntu hosts have system tzdata under
+# /usr/share/zoneinfo, which Python's zoneinfo module finds automatically.
+# Windows has no system tz database, so ZoneInfo("Europe/Amsterdam") in
+# src/app.py and src/homewizard_api_ingest.py raises ZoneInfoNotFoundError
+# without this.
+tzdata==2026.3; sys_platform == "win32"
