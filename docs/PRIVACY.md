@@ -127,11 +127,13 @@ means the cheap half found nothing.
 
 ## Private vocabulary stays out of the repo
 
-A tracked denylist of private names would itself publish that vocabulary. The
-names of your own hosts, sites and projects therefore live in an untracked file,
-`.privacy-denylist.local` (gitignored), one extended regular expression per
-line (comments on their own line only; patterns that match the empty string or are
-invalid are rejected with a warning); `scripts/check_privacy.sh` loads it when present and skips that one rule
-when it is absent (a fresh clone, or CI), so the generic structural rules always
-run. Because CI has no local file, it cannot enforce your private vocabulary:
-run the check locally before pushing.
+A tracked denylist of private names would itself publish that vocabulary, so
+the names of your own hosts, sites and projects live in an untracked file,
+`.privacy-denylist.private` (gitignored): one extended regular expression per
+line, with comments on their own line only. Patterns that are invalid or match
+the empty string are rejected with a warning.
+
+`scripts/check_privacy.sh` loads that file when it is present and skips that one
+rule when it is absent (a fresh clone, or CI), so the generic structural rules
+always run. Because CI has no local file, it cannot enforce your private
+vocabulary: run the check locally before pushing.

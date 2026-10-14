@@ -25,4 +25,4 @@ android/**/*.apk
 android/.idea/
 
 # Private vocabulary for scripts/check_privacy.sh -- local only, never committed.
-/.privacy-denylist.local
+/.privacy-denylist.private

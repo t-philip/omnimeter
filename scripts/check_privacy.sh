@@ -2,16 +2,16 @@
 # Structural half of the public-repo privacy rule (see docs/PRIVACY.md).
 #
 # WHAT THIS IS FOR
-# This repo documents its own design in comments, and the evidence behind
-# those decisions comes from measured data. That is what makes the
-# comments worth reading -- and it is also how dates and
-# occupancy details of a particular installation can end up in a public repo.
+# This repo documents its own design in comments, and the evidence behind those
+# decisions comes from measured data. That is what makes the comments worth
+# reading -- and it is also how details of a particular installation can end up
+# in a public repo.
 #
 # WHAT THIS CANNOT DO
-# This is NOT a keyword scanner pretending to be complete. A denylist only
-# ever encodes what someone already thought of, and the leaks that matter
-# are phrases nobody would have listed in advance (a verbatim free-text note, a
-# description of occupants or visitors).
+# This is NOT a keyword scanner pretending to be complete. A denylist only ever
+# encodes what someone already thought of, and the leaks that matter are
+# phrases nobody would have listed in advance (a verbatim free-text note, a
+# description of the people in a building).
 # Do not read a pass from this script as "safe to publish". It is the cheap
 # half. The other half is a semantic read of the diff by someone -- or
 # something -- with no memory of writing it, answering one question: could
@@ -83,7 +83,7 @@ echo "privacy check — $MODE"
 # the mechanism.
 # Names of the author's own hosts, sites and projects are NOT listed here: a
 # tracked denylist of private vocabulary would itself publish that vocabulary.
-# They live in an untracked file, .privacy-denylist.local (gitignored), one
+# They live in an untracked file, .privacy-denylist.private (gitignored), one
 # extended regex per line. Comments ('#') must be on their own line; a '#'
 # after a pattern is part of the pattern. Patterns that match the empty string
 # (for example a trailing '|') or are invalid regexes are rejected with a
@@ -119,7 +119,7 @@ load_patterns() {
     LOADED_N=$n
 }
 
-LOCAL_DENYLIST="${PRIVACY_DENYLIST_LOCAL:-.privacy-denylist.local}"
+LOCAL_DENYLIST="${PRIVACY_DENYLIST_LOCAL:-.privacy-denylist.private}"
 if [ -f "$LOCAL_DENYLIST" ]; then
     load_patterns "$LOCAL_DENYLIST"
     if [ "$LOADED_N" -eq 0 ]; then
@@ -139,10 +139,9 @@ report FAIL "people, relationships, places" \
 
 # --- Network and contact ----------------------------------------------------
 # RFC 5737 documentation ranges (192.0.2/24, 198.51.100/24, 203.0.113/24) and
-# 192.168.4.1 is the fixed default address of common captive-portal WiFi setup
-# tooling and says nothing about anyone's network; it is excluded so setup docs
-# do not fail on it.
-# it is excluded so firmware setup docs do not fail on their own captive-portal instructions.
+# loopback are the correct things to publish, so they are excluded, as is
+# 192.168.4.1, the fixed default address of common captive-portal WiFi setup
+# tooling, which says nothing about anyone's network.
 report FAIL "real IP addresses" \
     '\b(10|127|172|192)\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b' \
     '192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|127\.0\.0\.1|0\.0\.0\.0|192\.168\.4\.1\b'
@@ -174,9 +173,8 @@ report FAIL "month-year in prose" \
 report FAIL "duration attached to a household event" \
     '\b[0-9]+-day\b.*(absence|trip|visit|stay|span|away|empty|guest|occupan)|(absence|trip|visit|stay|span|away|empty|guest|occupan).*\b[0-9]+-day\b'
 
-# A bare year on a line about absence -- catches the case where a month and
-# its year are split across two wrapped comment lines, so a month and
-# year split across wrapped lines is still caught.
+# A bare year on a line about absence -- catches a month and its year split
+# across two wrapped comment lines.
 report FAIL "year on a line describing an absence" \
     '\b20[0-9]{2}\b.*(absence|nobody there|empty house|house was empty)|(absence|nobody there|empty house|house was empty).*\b20[0-9]{2}\b' \
     '20[0-9]{2}-[0-9]{2}-[0-9]{2}'
@@ -196,8 +194,9 @@ fi
 
 # --- Per-repo additions -----------------------------------------------------
 # Anything specific to one repo and safe to publish goes in a tracked
-# `.privacy-denylist`: one extended-regex per line, '#' comments on their own line. Private
-# vocabulary belongs in the untracked .privacy-denylist.local instead.
+# `.privacy-denylist`: one extended-regex per line, "#" comments on their own
+# line. Private vocabulary belongs in the untracked
+# .privacy-denylist.private instead.
 DENYLIST_FILE="$(git rev-parse --show-toplevel)/.privacy-denylist"
 if [ -f "$DENYLIST_FILE" ]; then
     load_patterns "$DENYLIST_FILE"
