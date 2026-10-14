@@ -21,19 +21,17 @@ The test to apply to any line you are about to write:
 
 ## Why generalising costs nothing
 
-Each of the shapes below was rewritten, and the documentation got **better** —
-the general form states the behaviour a reader needs, rather than an anecdote
-they cannot verify. The "before" column deliberately *describes* the offending
-shape rather than reproducing it, since quoting the real text here would
-republish the very thing that was removed:
+The general form states the behaviour a reader needs, rather than an anecdote
+they cannot verify. The left column *describes* each shape to avoid rather
+than reproducing it.
 
-| Shape that leaked | Rewritten as |
+### Shapes to avoid and their general form
+
+| Shape to avoid | General form |
 |---|---|
-| an absence, given its exact length in days, with its gas rate | `a long absence can run at a small fraction of normal gas use` |
-| a day labelled with who was working in the house, plus that day's litres | `a day with someone genuinely working in the house runs tens of litres` |
-| a months-long stay quoting a free-text occupancy note | `a months-long occupied span` |
-| a named internal container and its resource allocation | `a 1-core/2GB host` |
-| a flagged period given as a real date range, annotated `(away)` | `a fortnight of low gas across an absence` |
+| an absence, given its exact length in days with its meter rate | `a long absence can run at a small fraction of normal use` |
+| an event label or free-text note attached to a date or a stay | `a months-long occupied span`, `a day with real activity runs well above baseline` |
+| a flagged period given as a real date range | `a fortnight of low use across an absence` |
 
 ## Where the specific evidence goes instead
 
@@ -50,20 +48,18 @@ absent where it is a disclosure.
 2. **Test fixtures — the fiction window.** Every absolute date in test data
    uses **a year before 2002**, and nothing else.
 
-   The existing suite was migrated by shifting every date back exactly **28
+   Migrate existing fixtures by shifting every date back exactly **28
    years** — the Gregorian repeat cycle, which preserves weekday,
    day-of-year, month/day and leap-year structure, so nothing the code can
-   observe changes but the year digit. That precision matters: the anomaly
-   model's features include `dow_sin`/`dow_cos` and `doy_sin`/`doy_cos`, and
-   an arbitrary offset would have silently moved every weekday and shifted
-   summer fixtures into winter.
+   observe changes but the year digit. That precision matters wherever a model
+   uses day-of-week or day-of-year features: an arbitrary offset would move
+   weekdays and seasons.
 
    This is the rule that makes the whole check work. Real data sources
    begin well after 2001, so a date inside the window provably records
    nothing, and a date outside it is a **hard signal** rather than a guess.
-   Without a declared window there is no mechanical way to tell a fixture
-   date from a real one — which is how real dates can sit
-   in a test suite while every scan passes.
+   Without a declared window, fixture dates and real dates are
+   indistinguishable.
 
    Two carve-outs, both deliberate:
 
@@ -82,7 +78,7 @@ absent where it is a disclosure.
    labels, and the `.example` config files — carries `"Test Data ..."` or
    similar, never an invented string that reads like a real entry. This is
    where a verbatim note from a real database ends up, and it is precisely
-   where some of the worst leaks come from.
+   where verbatim notes tend to end up.
 4. **`docs/DESIGN_SPEC.md`** — undated aggregates are fine ("a bath is fast
    but short"); a dated or labelled observation is not.
 5. **Network examples** — RFC 5737 documentation ranges only
@@ -104,7 +100,7 @@ git config core.hooksPath .githooks
 
 It looks for bare dates in prose, month-years, durations attached to
 household events, absolute dates at or after 2002, free-text fields carrying
-something other than a placeholder, internal host names, real IPs, emails
+something other than a placeholder, private vocabulary (via the untracked local denylist), real IPs, emails
 and quoted log notes. It checks the *diff*, not the tree: flagging every
 date in a suite this size would bury the signal until someone switched the
 check off.
@@ -114,8 +110,8 @@ of writing it, answering the one question above.
 
 The second is not optional, and the script says so on every pass. The
 leaks that matter are phrases no denylist would have contained in advance:
-a quoted free-text note naming a person, or a description of who was working
-in the house. Neither is a word anyone would have thought to list.
+for example a free-text note, or a description of occupants or visitors;
+neither is a word anyone would have thought to list.
 
 The structural rules fire across every category of leak they were written
 for. What they cannot catch is a **single quoted proper noun** — a place name on its own is
@@ -128,3 +124,14 @@ the very patterns it looks for.
 
 **A pass from the script does not mean the diff is safe to publish.** It
 means the cheap half found nothing.
+
+## Private vocabulary stays out of the repo
+
+A tracked denylist of private names would itself publish that vocabulary. The
+names of your own hosts, sites and projects therefore live in an untracked file,
+`.privacy-denylist.local` (gitignored), one extended regular expression per
+line (comments on their own line only; patterns that match the empty string or are
+invalid are rejected with a warning); `scripts/check_privacy.sh` loads it when present and skips that one rule
+when it is absent (a fresh clone, or CI), so the generic structural rules always
+run. Because CI has no local file, it cannot enforce your private vocabulary:
+run the check locally before pushing.
