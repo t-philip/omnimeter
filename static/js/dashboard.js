@@ -28,7 +28,7 @@
     // Defaults to all-visible, matching db.py's own DEFAULT 1, so
     // nothing hides in the brief window before loadVisibilitySection()'s
     // fetch resolves.
-    visibility: { gas: true, water: true, battery: true, sufficiency: true },
+    visibility: { gas: true, water: true, battery: true, sufficiency: true, solar: true },
   };
   const charts = {};
 
@@ -45,6 +45,7 @@
     overview: "power",
     battery: "power",
     sufficiency: "power",
+    solar: "power",
   };
 
   // Current fiscal year, start-to-today, for a boundary like {month:5, day:1}.
@@ -1623,19 +1624,24 @@
       </g>`;
   }
 
-  function renderEnergyFlow(elId, overviewData) {
+  // `flow` is /api/energy-flow's response (optional): when present, Home is the same load figure the Sankey shows
+  // (solar + discharge + import - charge - export), and a Solar node appears if any solar data exists.
+  function renderEnergyFlow(elId, overviewData, flow) {
     const el = document.getElementById(elId);
     const gridImport = overviewData.power ? overviewData.power.import_kwh : 0;
     const gridExport = overviewData.power ? overviewData.power.export_kwh : 0;
     const battCharge = overviewData.battery ? overviewData.battery.charge_kwh : 0;
     const battDischarge = overviewData.battery ? overviewData.battery.discharge_kwh : 0;
     const gas = overviewData.gas ? overviewData.gas.usage_m3 : 0;
-    const houseTotal = gridImport + battDischarge;
+    const solarOn = !!(flow && flow.pv_configured && flow.sources);
+    const solar = solarOn ? flow.sources.solar || 0 : 0;
+    const houseTotal = flow && flow.uses ? flow.uses.load || 0 : gridImport + battDischarge;
     const homeLabel = window.OMNIMETER_HOME_LABEL || "Home";
 
     const importColor = cssVar("--series-power-import");
     const battColor = cssVar("--series-battery-charge");
     const gasColor = cssVar("--series-gas");
+    const solarColor = cssVar("--c-solar");
 
     // Taller viewBox + bigger circles/font than this diagram had before
     // an Overview redesign -- once the two-card row was
@@ -1649,6 +1655,7 @@
         <path class="flow-line" d="M 107 190 L 181 190" stroke="${importColor}"></path>
         <path class="flow-line" d="M 131 190 L 131 324" stroke="${battColor}"></path>
         <path class="flow-line" d="M 225 97 L 225 146" stroke="${gasColor}"></path>
+        ${solarOn ? `<path class="flow-line" d="M 90 85 L 190 163" stroke="${solarColor}"></path>` : ""}
         ${flowNode(65, 190, 42, "Grid", [
           { text: `↓ ${gridImport.toFixed(2)} kWh`, cls: "value-down" },
           { text: `↑ ${gridExport.toFixed(2)} kWh`, cls: "value-up" },
@@ -1659,6 +1666,7 @@
           { text: `↑ ${battDischarge.toFixed(2)} kWh`, cls: "value-up" },
         ])}
         ${flowNode(225, 65, 32, "Gas", [{ text: `${gas.toFixed(2)} m3` }], "above")}
+        ${solarOn ? flowNode(65, 65, 32, "Solar", [{ text: `${solar.toFixed(2)} kWh` }], "above") : ""}
       </svg>`;
   }
 
@@ -1845,12 +1853,13 @@
 
     let notes = "";
     if (data.pv_configured === false) {
-      notes += `<p class="chart-hint">No solar production shown — configure a PV system under Settings &rarr; System to include it.</p>`;
+      notes += `<p class="chart-hint">No solar production shown — connect an inverter feed, or configure a PV system under Settings &rarr; System, to include it.</p>`;
     }
     if (data.today_in_progress) {
-      notes +=
-        `<p class="chart-hint">Today isn't over yet — solar has no elapsed-time model, so its figure above is ` +
-        `a projection for the whole day, not what's actually been produced so far.</p>`;
+      notes += data.production_source === "estimated"
+        ? `<p class="chart-hint">Today isn't over yet — solar has no elapsed-time model, so its figure above is ` +
+          `a projection for the whole day, not what's actually been produced so far.</p>`
+        : `<p class="chart-hint">Today isn't over yet — solar shows what the inverter has produced so far today.</p>`;
     }
     const totalUses = useKeys.reduce((sum, k) => sum + ((data.uses && data.uses[k]) || 0), 0);
     if (data.fallback_kwh > 0.05 && totalUses > 0) {
@@ -2279,12 +2288,12 @@
       });
     }
     if (state.visibility.sufficiency && sufficiency && sufficiency.available) {
-      const totalSolar = sufficiency.days.reduce((s, d) => s + (d.estimated_production_kwh || 0), 0);
+      const totalSolar = sufficiency.days.reduce((s, d) => s + (d.production_kwh || 0), 0);
       const avgSufficiency = avg(sufficiency.days, "self_sufficiency_pct");
       cards.push({
         name: "Solar", colorVar: "--c-solar",
         total: totalSolar.toFixed(1), unit: "kWh",
-        badge: `<span class="badge-estimated" style="margin-left:4px;">estimated</span>`,
+        badge: productionBadge(sufficiency.production_source, "margin-left:4px;"),
         sub: avgSufficiency != null ? `${avgSufficiency.toFixed(0)}% self-sufficiency` : "&mdash;",
         sparkValues: sufficiency.days.map((d) => d.self_sufficiency_pct),
       });
@@ -2445,12 +2454,20 @@
         { label: "Avg", value: fmtAvg(avg(gasRows, "usage_m3"), 2, "m3/day") },
       ]);
 
-      renderEnergyFlow("overview-flow", data);
+      renderEnergyFlow("overview-flow", data, energyFlow);
+      {
+        const flowBadge = document.getElementById("overview-flow-badge");
+        if (flowBadge) {
+          flowBadge.hidden = !(energyFlow && energyFlow.pv_configured);
+          setProductionBadge("overview-flow-badge", energyFlow && energyFlow.production_source);
+        }
+      }
       // Same visibility filtering as the tiles above -- energy-flow
       // diagram and the Highs & Lows table further down are deliberately
       // left unfiltered this pass (fixed-position SVG layout / lower
       // priority), tracked as a known follow-up.
       renderSankeyFlow("overview-sankey", energyFlow);
+      setProductionBadge("overview-sankey-badge", energyFlow && energyFlow.production_source);
       const sourceRows = [
         { label: "Power import", value: data.power ? `${data.power.import_kwh.toFixed(2)} kWh` : "—", colorVar: "--series-power-import" },
         { label: "Power export", value: data.power ? `${data.power.export_kwh.toFixed(2)} kWh` : "—", colorVar: "--series-power-export" },
@@ -2625,12 +2642,319 @@
   }
 
   // ---- Self-sufficiency ----
+  // Solar figures are either measured by an inverter feed or estimated from panel capacity; the badge
+  // says which, never implies. source: "measured" | "mixed" | "estimated" (the API's production_source).
+  function productionBadgeParts(source) {
+    if (source === "measured") return { cls: "badge-measured", text: "measured" };
+    if (source === "mixed") return { cls: "badge-estimated", text: "partly estimated" };
+    return { cls: "badge-estimated", text: "estimated" };
+  }
+  function productionBadge(source, style) {
+    const b = productionBadgeParts(source);
+    return `<span class="${b.cls}"${style ? ` style="${style}"` : ""}>${b.text}</span>`;
+  }
+  function setProductionBadge(id, source) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const b = productionBadgeParts(source);
+    el.className = b.cls;
+    el.textContent = b.text;
+  }
+  function setSufficiencyIntro(source) {
+    const el = document.getElementById("sufficiency-intro");
+    if (!el) return;
+    const b = productionBadgeParts(source);
+    const text =
+      source === "measured"
+        ? "Solar production is measured by your inverter; battery and grid come from your meters. " +
+          "Self-sufficiency is the share of what the house used that did not come from the grid " +
+          "(energy the battery gives back counts only if it was charged from solar)."
+        : source === "mixed"
+          ? "Solar production is measured by your inverter where it has data and estimated from your panel " +
+            "capacity otherwise; the basis is stated below. Battery and grid come from your meters."
+          : "Derived from an assumed solar-yield model scaled by your panel capacity, reconciled against real " +
+            "grid export. Not a measured value — no inverter feed is connected to OmniMeter.";
+    el.innerHTML = `<span class="${b.cls}">${b.text}</span> ${text}`;
+  }
+
+  // ---- Solar tab ----
+  // Three sub-tabs: Production (the only one driven by the date-range picker, so the picker lives inside it),
+  // Daily curve (15-minute power for a chosen recent day) and History (year over year, all time).
+  // Chart.js draws at zero size inside a hidden container, so only the ACTIVE sub-tab's charts are drawn, and a
+  // sub-tab draws itself when it is opened (the shared initSubTabs() only toggles visibility).
+
+  // A plain single-series bar chart (the Power chart is a diverging import/export pair, which doesn't fit one series).
+  // `partialIdx`: index of an in-progress day to draw lighter ("so far", not a finished day).
+  function barChart(canvasId, labels, data, colorVar, seriesLabel, extraPlugins = [], partialIdx = -1) {
+    const ctx = document.getElementById(canvasId);
+    if (charts[canvasId]) charts[canvasId].destroy();
+    const datasets = [{ label: seriesLabel, data }];
+    if (!hasAnyData(labels, datasets)) {
+      showNoDataState(canvasId);
+      return;
+    }
+    clearNoDataState(canvasId);
+    const color = cssVar(colorVar);
+    const plugins = withRangeSelect(labels, extraPlugins);
+    charts[canvasId] = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: seriesLabel,
+            data,
+            backgroundColor: data.map((_, i) => (i === partialIdx ? color + "80" : color)),
+            borderRadius: 2,
+            maxBarThickness: 16,
+          },
+        ],
+      },
+      plugins,
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (c) => `${c.dataset.label}: ${c.raw == null ? "—" : c.raw.toFixed(2)}${c.dataIndex === partialIdx ? " (so far)" : ""}`,
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: cssVar("--text-muted") }, grid: { color: cssVar("--gridline") } },
+          y: { beginAtZero: true, ticks: { color: cssVar("--text-muted") }, grid: { color: cssVar("--gridline") } },
+        },
+      },
+    });
+    renderChartToggles(canvasId, charts[canvasId], datasets, sunToggleFor(extraPlugins));
+  }
+
+  const SOLAR_YEAR_COLORS = [
+    "--series-power-import", "--series-gas", "--series-water", "--series-battery-charge",
+    "--series-battery-discharge", "--series-battery-soc", "--series-power-export", "--series-occupancy",
+  ];
+  const solarState = { summary: null, history: null, power: [], wired: false };
+
+  function solarLocalDay(iso) {
+    return new Date(iso).toLocaleDateString("en-CA", { timeZone: window.OMNIMETER_TIMEZONE || "Europe/Amsterdam" });
+  }
+
+  function activeSolarSubtab() {
+    const btn = document.querySelector("#panel-solar nav.subtabs button.active");
+    return btn ? btn.dataset.subtab : "solar-production";
+  }
+
+  function renderSolarActive() {
+    const which = activeSolarSubtab();
+    if (which === "solar-production") drawSolarProduction();
+    else if (which === "solar-curve") drawSolarCurve();
+    else if (which === "solar-history") drawSolarHistory();
+  }
+
+  async function loadSolar() {
+    const { from, to } = rangeParams();
+    const [summary, history, power] = await Promise.all([
+      fetchJson(`/api/solar/summary?from=${from}&to=${to}`),
+      fetchJson("/api/solar/history"),
+      fetchJson("/api/solaredge/power?hours=336").catch(() => []),
+    ]);
+    Object.assign(solarState, { summary, history, power });
+    if (!solarState.wired) {
+      solarState.wired = true;
+      // Registered after initSubTabs()'s own handlers, so the clicked sub-panel is already visible when we draw.
+      document.querySelectorAll("#panel-solar nav.subtabs button").forEach((b) => b.addEventListener("click", renderSolarActive));
+      document.getElementById("solar-curve-day").addEventListener("change", drawSolarCurve);
+    }
+    renderSolarActive();
+  }
+
+  function drawSolarProduction() {
+    const data = solarState.summary;
+    const hero = document.getElementById("solar-hero");
+    if (!data) return;
+    if (!data.available) {
+      hero.innerHTML = `<div class="empty-state">${escHtml(data.reason || "Not available yet.")}</div>`;
+      if (charts["chart-solar-daily"]) charts["chart-solar-daily"].destroy();
+      charts["chart-solar-daily"] = null;
+      document.getElementById("solar-summary").innerHTML = "";
+      document.getElementById("solar-avg").innerHTML = "";
+      return;
+    }
+    const s = data.stats;
+    const badgeParts = productionBadgeParts(data.production_source);
+    const badge = document.getElementById("solar-badge");
+    badge.className = badgeParts.cls;
+    badge.textContent = badgeParts.text;
+    badge.hidden = false;
+
+    // Hero: the period total, with the change against the previous period of the same length when comparable.
+    let compare = "";
+    if (data.prior) {
+      const up = data.prior.delta_pct >= 0;
+      compare =
+        `<div class="chart-hint">${up ? "▲" : "▼"} ${Math.abs(data.prior.delta_pct).toFixed(1)}% vs previous period ` +
+        `(${data.prior.total_kwh.toFixed(0)} kWh, ${escHtml(data.prior.from)} – ${escHtml(data.prior.to)})</div>`;
+    }
+    hero.innerHTML =
+      `<div class="costs-hero"><div class="cost-headline-label">Solar production, selected period ` +
+      `${productionBadge(data.production_source, "")}</div>` +
+      `<div class="costs-hero-value">${s.total_kwh.toFixed(0)} <span style="font-size:0.5em">kWh</span></div>${compare}</div>`;
+
+    // Daily production bars (+ sunshine rail where weather data exists). Today, if present, is drawn lighter.
+    const labels = data.days.map((d) => d.date);
+    const values = data.days.map((d) => d.kwh);
+    const partialIdx = data.days.findIndex((d) => d.partial);
+    fetchWeatherDays().then((sun) => {
+      if (activeSolarSubtab() !== "solar-production") return; // user moved on while the weather data loaded
+      barChart("chart-solar-daily", labels, values, "--c-solar", "Production kWh", sun ? [sunRailPlugin(labels, sun.days)] : [], partialIdx);
+      setSunRailHint("solar-hint", sun);
+    });
+    renderChartAvg("solar-avg", [{ label: "Avg", value: fmtAvg(s.avg_kwh_per_day, 1, "kWh/day") }]);
+
+    const rows = [
+      { label: "Average per day", value: fmtAvg(s.avg_kwh_per_day, 1, "kWh"), colorVar: "--c-solar" },
+      { label: "Best day", value: s.best ? `${s.best.kwh.toFixed(1)} kWh (${s.best.date})` : "—", colorVar: "--c-solar" },
+      { label: "Weakest day", value: s.worst ? `${s.worst.kwh.toFixed(1)} kWh (${s.worst.date})` : "—", colorVar: "--c-solar" },
+    ];
+    if (s.specific_yield_kwh_per_kwp != null) {
+      rows.push({ label: `Yield per kWp (${data.kwp} kWp)`, value: `${s.specific_yield_kwh_per_kwp.toFixed(0)} kWh/kWp`, colorVar: "--c-solar" });
+    }
+    if (s.home_use_pct != null) {
+      rows.push({ label: "Used at home / exported", value: `${s.home_use_pct.toFixed(0)}% / ${s.export_pct.toFixed(0)}%`, colorVar: "--series-power-export" });
+    }
+    renderSourcesTable("solar-summary", rows);
+  }
+
+  // Daily curve: the 15-minute buckets we keep for recent days, one local day at a time (default: the latest).
+  function drawSolarCurve() {
+    const note = document.getElementById("solar-curve-note");
+    const select = document.getElementById("solar-curve-day");
+    const byDay = {};
+    for (const b of solarState.power || []) (byDay[solarLocalDay(b.time)] ||= []).push(b);
+    const days = Object.keys(byDay).sort().reverse();
+    if (!days.length) {
+      select.innerHTML = "";
+      note.innerHTML = `<div class="empty-state">No 15-minute data yet. It is collected while the inverter feed is running.</div>`;
+      document.getElementById("solar-curve-stats").innerHTML = "";
+      if (charts["chart-solar-curve"]) charts["chart-solar-curve"].destroy();
+      charts["chart-solar-curve"] = null;
+      return;
+    }
+    const previous = select.value;
+    if ([...select.options].map((o) => o.value).join() !== days.join()) {
+      select.innerHTML = days.map((d, i) => `<option value="${d}">${i === 0 ? d + " (latest)" : d}</option>`).join("");
+    }
+    select.value = days.includes(previous) ? previous : days[0];
+    const buckets = byDay[select.value];
+    const tz = window.OMNIMETER_TIMEZONE || "Europe/Amsterdam";
+    const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: tz });
+    const labels = buckets.map((b) => hhmm(b.time));
+    const watts = buckets.map((b) => b.power_w);
+    note.innerHTML =
+      `<p class="chart-hint">Net PV power in 15-minute buckets for one day. Independent of the date range on the Production sub-tab; ` +
+      `15-minute data is kept from the day the inverter feed started, so only recent days are listed.</p>`;
+    lineChart("chart-solar-curve", labels, [seriesDataset("Power (W)", watts, "--c-solar", { fill: false })]);
+    const peak = buckets.reduce((m, b) => (b.power_w > m.power_w ? b : m), buckets[0]);
+    const producing = buckets.filter((b) => b.power_w > 0); // the zero-watt buckets before sunrise / after sunset don't count
+    renderSourcesTable("solar-curve-stats", [
+      { label: "Peak power", value: `${peak.power_w.toFixed(0)} W at ${hhmm(peak.time)}`, colorVar: "--c-solar" },
+      { label: "Producing from / to", value: producing.length ? `${hhmm(producing[0].time)} – ${hhmm(producing[producing.length - 1].time)}` : "—", colorVar: "--c-solar" },
+    ]);
+  }
+
+  // History: all-time, independent of any date range.
+  function drawSolarHistory() {
+    const hist = solarState.history;
+    const body = document.getElementById("solar-annual");
+    if (!hist || !hist.available) {
+      body.innerHTML = `<div class="empty-state">No stored production history yet.</div>`;
+      if (charts["chart-solar-monthly"]) charts["chart-solar-monthly"].destroy();
+      charts["chart-solar-monthly"] = null;
+      return;
+    }
+    const years = Object.keys(hist.years).sort();
+    const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const datasets = years.map((y, i) => {
+      const latest = i === years.length - 1;
+      return seriesDataset(y, hist.years[y], latest ? "--c-solar" : SOLAR_YEAR_COLORS[i % SOLAR_YEAR_COLORS.length], {
+        borderWidth: latest ? 3 : 1.5,
+        spanGaps: false,
+      });
+    });
+    lineChart("chart-solar-monthly", names, datasets);
+
+    // Annual table. Yield is shaded by where a COMPLETE year sits between the weakest and strongest complete year
+    // (one hue, darker = higher: a duller year is not "bad", so no red/green judgement). Sun columns come from the
+    // same Open-Meteo data as the sun rail; "sun-adjusted" divides yield by that year's sunshine energy so a year can be
+    // judged against its weather (100 = an average year; above = the panels did better than the sun alone explains).
+    const annual = hist.annual;
+    const done = annual.filter((a) => a.complete);
+    const ys = done.map((a) => a.yield_kwh_per_kwp);
+    const lo = Math.min(...ys);
+    const hi = Math.max(...ys);
+    const solar = cssVar("--c-solar");
+    const shade = (v) => {
+      const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
+      return solar + Math.round((0.1 + 0.45 * t) * 255).toString(16).padStart(2, "0");
+    };
+    const rows = annual
+      .slice()
+      .reverse()
+      .map((a) => {
+        const y = a.yield_kwh_per_kwp;
+        const flag = a.best ? ` <strong>best</strong>` : a.lowest ? ` <em>lowest</em>` : "";
+        const yieldCell =
+          y == null ? "—" : `<span style="display:block;padding:2px 6px;border-radius:3px;background:${shade(y)}">${y.toFixed(0)}${flag}</span>`;
+        const vs = a.yield_vs_avg_pct == null ? "—" : `${a.yield_vs_avg_pct >= 0 ? "▲" : "▼"} ${Math.abs(a.yield_vs_avg_pct).toFixed(1)}%`;
+        const sun = a.irradiation_kwh_m2 == null ? "—" : `${a.irradiation_kwh_m2.toFixed(0)}`;
+        const sunVs = a.sun_vs_avg_pct == null ? "—" : `${a.sun_vs_avg_pct >= 0 ? "▲" : "▼"} ${Math.abs(a.sun_vs_avg_pct).toFixed(1)}%`;
+        const adj = a.sun_adjusted_index == null ? "—" : String(a.sun_adjusted_index);
+        return (
+          `<tr><td>${a.year}${a.complete ? "" : ' <span class="chart-hint">(incomplete)</span>'}</td>` +
+          `<td class="value-cell">${a.kwh.toFixed(0)} kWh</td><td class="value-cell">${yieldCell}</td>` +
+          `<td class="value-cell">${vs}</td><td class="value-cell">${sun}</td><td class="value-cell">${sunVs}</td><td class="value-cell">${adj}</td>` +
+          `<td class="value-cell">${a.days}</td></tr>`
+        );
+      })
+      .join("");
+    const R = 'style="text-align:right"';
+
+    // A plain-language reading of the table, built from the same numbers.
+    let reading = "";
+    if (done.length >= 2) {
+      const best = done.find((a) => a.best);
+      const low = done.find((a) => a.lowest);
+      const sunTxt = (a) => (a.sun_vs_avg_pct != null ? `, sun ${a.sun_vs_avg_pct >= 0 ? "+" : "−"}${Math.abs(a.sun_vs_avg_pct).toFixed(0)}% vs an average year` : "");
+      reading = `Best year: <strong>${best.year}</strong> (${best.yield_kwh_per_kwp.toFixed(0)} kWh/kWp${sunTxt(best)}). ` +
+        `Lowest: <strong>${low.year}</strong> (${low.yield_kwh_per_kwp.toFixed(0)} kWh/kWp${sunTxt(low)}).`;
+      const adjusted = done.filter((a) => a.sun_adjusted_index != null);
+      if (adjusted.length >= 2) {
+        const top = adjusted.reduce((m, a) => (a.sun_adjusted_index > m.sun_adjusted_index ? a : m), adjusted[0]);
+        reading += ` Judged against the sunshine it got, <strong>${top.year}</strong> was the strongest (index ${top.sun_adjusted_index}).`;
+      }
+    }
+    body.innerHTML =
+      `<table class="sources-table hl-table"><thead><tr><th>Year</th><th ${R}>Production</th><th ${R}>Yield (kWh/kWp)</th>` +
+      `<th ${R}>vs avg year</th><th ${R}>Sun (kWh/m²)</th><th ${R}>Sun vs avg</th><th ${R}>Sun-adjusted</th><th ${R}>Days of data</th></tr></thead><tbody>${rows}</tbody></table>` +
+      (reading ? `<p class="chart-hint" style="margin-top:12px">${reading}</p>` : "") +
+      `<p class="chart-hint"><strong>Production</strong> is the year's total. <strong>Yield</strong> is that total divided by the ` +
+      `panel rating (${hist.kwp ? hist.kwp + " kWp" : "kWp not set"}); darker shading = a stronger year, shown for complete years only. ` +
+      `<strong>vs avg year</strong> compares with the average of those complete years. <strong>Sun</strong> is the solar energy that ` +
+      `reached a flat surface over the year (Open-Meteo reanalysis, model data rather than a local sensor); <strong>Sun vs avg</strong> ` +
+      `compares it with the average of the complete years. <strong>Sun-adjusted</strong> compares each year's yield with the sun it ` +
+      `received (100 = average; above 100 means the panels did better than the sun alone explains, below 100 worse). ` +
+      `<strong>Days of data</strong> counts days with a ` +
+      `reading: fewer than 365 means the year is incomplete (installed part-way through, gaps, or still running).</p>`;
+    renderWeatherCredit("solar-history-credit", hist.weather_attribution);
+  }
+
   async function loadSufficiency() {
     const { from, to } = rangeParams();
     const el = document.getElementById("sufficiency-body");
     const data = await fetchJson(`/api/self-sufficiency?from=${from}&to=${to}`);
     if (!data.available) {
-      el.innerHTML = `<div class="empty-state">${escHtml(data.reason || "Not available yet.")} Add your PV kWp rating under Settings.</div>`;
+      el.innerHTML = `<div class="empty-state">${escHtml(data.reason || "Not available yet.")}</div>`;
       return;
     }
     // Which model produced these numbers is stated, never implied: a silently
@@ -2639,12 +2963,20 @@
     // cannot see. Degrades per day, so a range straddling the start of weather
     // coverage still uses real radiation for the days that have it.
     const weatherDays = data.weather_days || 0;
-    const basisNote =
-      weatherDays === data.days.length
+    const measuredDays = data.measured_days || 0;
+    const estimatedBasis =
+      weatherDays === data.estimated_days
         ? "weather-adjusted from measured solar radiation"
         : weatherDays > 0
-          ? `weather-adjusted for ${weatherDays} of ${data.days.length} days; the rest use the seasonal average`
+          ? `weather-adjusted for ${weatherDays} of ${data.estimated_days} estimated days; the rest use the seasonal average`
           : "seasonal average — no weather data for this range";
+    const basisNote =
+      data.production_source === "measured"
+        ? "production measured by your solar inverter; battery and grid from your meters"
+        : data.production_source === "mixed"
+          ? `production measured by your inverter for ${measuredDays} of ${data.days.length} days; the other ${data.estimated_days} are estimated (${estimatedBasis})`
+          : estimatedBasis;
+    setSufficiencyIntro(data.production_source);
     const avgSufficiency = avg(data.days, "self_sufficiency_pct");
     // Same hero treatment as the Costs tab --
     // pulls the headline number up top instead of leaving it buried in the
@@ -2658,14 +2990,17 @@
       ${heroHtml}
       <div class="chart-card">
         <div class="chart-card-header">
-          <h3>Estimated self-sufficiency (%)</h3>
+          <h3>${data.production_source === "measured" ? "Self-sufficiency (%)" : "Estimated self-sufficiency (%)"}</h3>
           <div class="chart-avg" id="sufficiency-avg"></div>
         </div>
         <p class="chart-hint">Basis: ${escHtml(basisNote)}.</p>
         ${
           data.today_in_progress
-            ? `<p class="chart-hint">Today isn't over yet — its solar and self-sufficiency figures are a ` +
-              `projection for the whole day, not what's actually happened so far.</p>`
+            ? (data.days.some((d) => d.partial) || data.production_source === "measured")
+              ? `<p class="chart-hint">Today isn't over yet — its solar figure is what the inverter has produced so far, ` +
+                `so today's self-sufficiency will still change.</p>`
+              : `<p class="chart-hint">Today isn't over yet — its solar and self-sufficiency figures are a ` +
+                `projection for the whole day, not what's actually happened so far.</p>`
             : ""
         }
         ${
@@ -3446,7 +3781,7 @@
   // rather than leaving the user stranded on a panel with no way back to
   // it via the nav.
   function applyTabVisibility() {
-    const tabToKey = { gas: "gas", water: "water", battery: "battery", sufficiency: "sufficiency" };
+    const tabToKey = { gas: "gas", water: "water", battery: "battery", sufficiency: "sufficiency", solar: "solar" };
     let activeTabHidden = false;
     for (const [tab, key] of Object.entries(tabToKey)) {
       const btn = document.querySelector(`nav.tabs button[data-tab="${tab}"]`);
@@ -3467,8 +3802,9 @@
       water: Boolean(v.show_water_tab),
       battery: Boolean(v.show_battery_tab),
       sufficiency: Boolean(v.show_sufficiency_tab),
+      solar: Boolean(v.show_solar_tab),
     };
-    for (const field of ["show_gas_tab", "show_water_tab", "show_battery_tab", "show_sufficiency_tab"]) {
+    for (const field of ["show_gas_tab", "show_water_tab", "show_battery_tab", "show_sufficiency_tab", "show_solar_tab"]) {
       const input = document.querySelector(`#form-visibility [name="${field}"]`);
       if (input) input.checked = Boolean(v[field]);
     }
@@ -4044,7 +4380,7 @@
     "overview-energy-flow": {
       section: "Overview",
       title: "Energy flow: sources → uses",
-      text: "A proportional view alongside the simpler diagram above it: ribbon width is scaled to kWh, so it shows how much of each source went where, not just the totals. Solar is an estimate (see Self-Sufficiency), and OmniMeter only measures each side's totals, not which kWh went to which use — so ribbons follow a documented assumption (solar and battery cover the house first, then the battery, then export; grid import covers whatever's left) rather than a direct measurement. When a period has days that mix grid import and export, or battery charge and discharge, in ways that assumption can't fully separate, a note below the diagram says how much and why.",
+      text: "A proportional view alongside the simpler diagram above it: ribbon width is scaled to kWh, so it shows how much of each source went where, not just the totals. Solar is measured by your inverter where an inverter feed is connected, and otherwise estimated (see Self-Sufficiency), and OmniMeter only measures each side's totals, not which kWh went to which use — so ribbons follow a documented assumption (solar and battery cover the house first, then the battery, then export; grid import covers whatever's left) rather than a direct measurement. When a period has days that mix grid import and export, or battery charge and discharge, in ways that assumption can't fully separate, a note below the diagram says how much and why.",
     },
     "import-csv": {
       section: "Import",
@@ -4084,7 +4420,7 @@
     "settings-pv": {
       section: "Settings",
       title: "PV system",
-      text: "Rated capacity (kWp) is the only field that actually feeds anything — it drives the Self-Sufficiency tab's estimated production model (nameplate capacity × a seasonal yield curve, reconciled against your real grid export). Installed date and Notes are for your own reference only; nothing reads them back.",
+      text: "Rated capacity (kWp) is the only field that actually feeds anything — it drives the estimated production model (nameplate capacity × a seasonal yield curve, reconciled against your real grid export) for days where no inverter measurement exists. Where an inverter feed is connected, measured production is used instead. Installed date and Notes are for your own reference only; nothing reads them back.",
     },
     "settings-rate-power": {
       section: "Settings",
@@ -4190,6 +4526,7 @@
       gas: loadGas,
       water: loadWater,
       battery: loadBattery,
+      solar: loadSolar,
       sufficiency: loadSufficiency,
       costs: loadCosts,
       comparison: loadComparison,

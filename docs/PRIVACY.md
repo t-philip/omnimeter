@@ -101,7 +101,7 @@ git config core.hooksPath .githooks
 It looks for bare dates in prose, month-years, durations attached to
 household events, absolute dates at or after 2002, free-text fields carrying
 something other than a placeholder, private vocabulary (via the untracked local denylist), real IPs, emails
-and quoted log notes. It checks the *diff*, not the tree: flagging every
+and quoted log notes. The free-text and quoted-note rules skip front-end files (`.js`, `.html`, `.css`), where UI labels are not data entries. It checks the *diff*, not the tree: flagging every
 date in a suite this size would bury the signal until someone switched the
 check off.
 

@@ -36,6 +36,7 @@
     <button data-tab="gas">Gas</button>
     <button data-tab="water">Water</button>
     <button data-tab="battery">Battery</button>
+    <button data-tab="solar">Solar</button>
     <button data-tab="sufficiency">Self-Sufficiency</button>
     <button data-tab="costs">Costs</button>
     <button data-tab="comparison">Comparison</button>
@@ -58,11 +59,11 @@
       <div id="subpanel-overview-visuals" class="subpanel active">
         <div class="overview-flow-grid">
           <div class="chart-card">
-            <h3>Energy distribution</h3>
+            <h3>Energy distribution <span id="overview-flow-badge" class="badge-estimated" hidden>estimated</span></h3>
             <div id="overview-flow"></div>
           </div>
           <div class="chart-card">
-            <h3>Energy flow: sources &rarr; uses <span class="badge-estimated">estimated</span><button class="info-icon" type="button" data-help="overview-energy-flow" aria-label="Help: Energy flow: sources to uses">&#9432;</button></h3>
+            <h3>Energy flow: sources &rarr; uses <span id="overview-sankey-badge" class="badge-estimated">estimated</span><button class="info-icon" type="button" data-help="overview-energy-flow" aria-label="Help: Energy flow: sources to uses">&#9432;</button></h3>
             <div id="overview-sankey"></div>
           </div>
         </div>
@@ -202,8 +203,65 @@
       </div>
     </section>
 
+    <section id="panel-solar" class="panel">
+      <nav class="subtabs">
+        <button data-subtab="solar-production" class="active">Production</button>
+        <button data-subtab="solar-curve">Daily curve</button>
+        <button data-subtab="solar-history">History</button>
+      </nav>
+
+      <div id="subpanel-solar-production" class="subpanel active">
+        <div class="range-controls" data-target="solar"></div>
+        <div id="solar-hero"></div>
+        <div class="dashboard-grid">
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Production (kWh/day) <span id="solar-badge" class="badge-estimated" hidden>estimated</span></h3>
+              <div class="chart-avg" id="solar-avg"></div>
+            </div>
+            <div id="solar-hint"></div>
+            <canvas id="chart-solar-daily"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Period summary</h3>
+            <div id="solar-summary"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="subpanel-solar-curve" class="subpanel">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Power through the day (W, 15-minute)</h3>
+            <label class="chart-avg">Day <select id="solar-curve-day"></select></label>
+          </div>
+          <div id="solar-curve-note"></div>
+          <canvas id="chart-solar-curve"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>That day</h3>
+          <div id="solar-curve-stats"></div>
+        </div>
+      </div>
+
+      <div id="subpanel-solar-history" class="subpanel">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Month by month, year over year (kWh)</h3>
+          </div>
+          <p class="chart-hint">Production per month since installation, one line per year. A month still in progress is partial.</p>
+          <canvas id="chart-solar-monthly"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Annual production</h3>
+          <div id="solar-annual"></div>
+          <div class="weather-credit" id="solar-history-credit"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="panel-sufficiency" class="panel">
-      <p><span class="badge-estimated">estimated</span> Derived from an assumed solar-yield model scaled by your
+      <p id="sufficiency-intro"><span class="badge-estimated">estimated</span> Derived from an assumed solar-yield model scaled by your
         panel capacity, reconciled against real grid export. Not a measured value — your inverter's own
         production data isn't accessible to OmniMeter.</p>
       <div class="range-controls" data-target="sufficiency"></div>
@@ -504,6 +562,7 @@
             <label class="checkbox-label"><input type="checkbox" name="weather_enabled"> Weather data (Open-Meteo) &mdash; contacts the internet; sends your configured coordinates, rounded</label>
             <label class="checkbox-label"><input type="checkbox" name="update_check_enabled"> Check GitHub for a newer version &mdash; contacts api.github.com once a day; sends no data about your install, just checks the latest public release tag</label>
             <label class="checkbox-label"><input type="checkbox" name="anomaly_alerts_enabled"> Leak alerts (Telegram) &mdash; contacts api.telegram.org when a possible water leak is detected; configure the chat ID and thresholds under Settings &rarr; Leak alerts</label>
+            <label class="checkbox-label"><input type="checkbox" name="solaredge_enabled"> SolarEdge production (measured) &mdash; contacts monitoringapi.solaredge.com; sends your site's access token (see the README's SolarEdge section for setup); without it solar is estimated from your kWp rating</label>
             <button type="submit">Save</button>
           </form>
           <div id="toggles-status" class="form-status"></div>
@@ -518,6 +577,7 @@
             <label class="checkbox-label"><input type="checkbox" name="show_gas_tab"> Gas</label>
             <label class="checkbox-label"><input type="checkbox" name="show_water_tab"> Water</label>
             <label class="checkbox-label"><input type="checkbox" name="show_battery_tab"> Battery</label>
+            <label class="checkbox-label"><input type="checkbox" name="show_solar_tab"> Solar</label>
             <label class="checkbox-label"><input type="checkbox" name="show_sufficiency_tab"> Self-Sufficiency (solar)</label>
             <button type="submit">Save</button>
           </form>

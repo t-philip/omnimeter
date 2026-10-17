@@ -1327,6 +1327,7 @@ class TestVisibilityToggles:
             "show_water_tab": 1,
             "show_battery_tab": 1,
             "show_sufficiency_tab": 1,
+            "show_solar_tab": 1,
         }
 
     def test_sufficiency_toggle_round_trips(self, client):
@@ -2322,6 +2323,18 @@ class TestUpdateCheckEndpoint:
         assert body["enabled"] is True
         assert body["update_available"] is True
         assert body["latest_version"] == "v99.0.0"
+
+
+class TestSolarEdgeToggle:
+    """solaredge_enabled must be reachable from the UI's toggles endpoint -- the column
+    alone left a self-hosting user needing a manual database edit to switch the poller on."""
+
+    def test_round_trips_through_the_toggles_endpoint(self, client):
+        assert client.get("/api/settings/toggles").get_json()["solaredge_enabled"] in (0, False)
+        client.post("/api/settings/toggles", json={"solaredge_enabled": True})
+        assert client.get("/api/settings/toggles").get_json()["solaredge_enabled"] in (1, True)
+        client.post("/api/settings/toggles", json={"solaredge_enabled": False})
+        assert client.get("/api/settings/toggles").get_json()["solaredge_enabled"] in (0, False)
 
 
 class TestMeterCsvTemplate:

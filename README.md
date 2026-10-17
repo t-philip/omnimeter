@@ -217,7 +217,7 @@ missing data and the tags disappear on their own.
 to add daily solar-radiation data from [Open-Meteo](https://open-meteo.com/). It
 draws a per-day sunshine rail along the bottom of the solar-driven charts, and
 makes the Self-Sufficiency production estimate weather-aware instead of a flat
-monthly average. This is one of three features that contact the internet (the
+monthly average (used for days with no measured inverter data). This is one of three features that contact the internet (the
 others are the GitHub update check and Telegram leak alerts, both also off by
 default), and the request carries your configured coordinates — which are
 rounded in code before use (see `OMNIMETER_WEATHER_LOCATION_PRECISION` in
@@ -275,7 +275,9 @@ the ones the wizard doesn't touch (timezone, ports).
 - `src/db.py` — SQLite schema + connection helper
 - `src/ingest.py` — CSV parsing, idempotent load into raw `*_readings` tables
 - `src/aggregate.py` — daily rollups from cumulative meter readings
-- `src/solar_estimate.py` — estimated (not measured) PV production / self-sufficiency
+- `src/solar_estimate.py` — estimated (not measured) PV production, the fallback when no inverter feed exists
+- `src/solar_production.py` — measured PV production (when an inverter feed is connected) and the
+  battery-aware self-sufficiency calculation
 - `src/tariff_parser.py` — `TariffParser` registry + auto-detection for supplier rate-sheet PDFs
   (Vattenfall, Greenchoice), plus the generic CSV import format for any other supplier
 - `src/app.py` — Flask app factory + REST API + page routes
@@ -512,12 +514,69 @@ trusting a "standard" scheme:
   setup wizard automates this inspection step for you (trust-on-first-use, same model as an SSH
   host-key prompt) — see Quick Start above.
 
+## SolarEdge: measured solar production (optional)
+
+By default OmniMeter *estimates* solar production from your kWp rating (optionally
+weather-adjusted). If your inverter is a SolarEdge, it can read the real figure from
+SolarEdge's cloud Monitoring API (V2) instead. The estimate stays as the fallback for days
+without a measurement. Every figure is labelled `measured` or `estimated`, never blended
+silently.
+
+What it adds: measured production in Self-Sufficiency, the Overview and the energy-flow
+diagrams; battery-aware self-sufficiency; and a **Solar** tab (daily production, a 15-minute
+curve, and year-over-year history with a sun-adjusted index). This is the third feature
+that contacts the internet, and like the others it is off until you switch it on.
+
+**Setup (once):**
+
+1. In the SolarEdge developer portal, create an application and note its OAuth client id and
+   secret; register `http://localhost:8888/callback` as its redirect URI. Put the id and secret
+   in `.env` as `SOLAREDGE_CLIENT_ID` / `SOLAREDGE_CLIENT_SECRET` (see `.env.example`).
+2. Authorise: `docker compose run --rm --service-ports solaredge-authorize`, open the URL it
+   prints, sign in as the **site owner** (not the developer login) and approve. If your browser
+   is on a different machine, forward port 8888 to the Docker host first
+   (`ssh -L 8888:127.0.0.1:8888 <host>`). The token pair is stored in `data/solaredge_token.json`
+   (mode 600) and never printed.
+3. Optional but recommended: pull the history already stored on SolarEdge's side with
+   `docker compose run --rm solaredge-backfill --dry-run`, then again without `--dry-run`. It uses
+   about one API call per calendar month of history, paces itself, resumes safely, and refuses to
+   start if it would exhaust the credit allowance.
+4. Switch on **SolarEdge production** in Settings -> Feature toggles. The `solaredge` service polls
+   every 30 minutes (daylight only).
+
+**Things worth knowing:**
+
+- The access token lives 2 hours; the refresh token **rotates on every refresh**, so the token
+  file is replaced atomically under a lock. Do not copy it between machines or restore an old
+  copy -- the old refresh token is already dead and you would have to re-authorise.
+- The vendor grant lasts at most 24 months. The days left are in the read-only
+  `/api/solaredge/status` response and, with Telegram alerts configured, OmniMeter warns once
+  about 30 days before it ends. A revoked or expired
+  grant pauses polling and alerts once; run the authorise step again to resume.
+- API usage is metered in credits. The balance shown is an **estimate** from this app's own
+  request count (set `OMNIMETER_SOLAREDGE_CREDIT_LIMIT` and `OMNIMETER_SOLAREDGE_CREDIT_RESET_DAY`
+  from your portal's usage page); the vendor does not count token refreshes.
+- Other layouts (for example no consumption meter) are handled in code and tests but have not been exercised against a live site.
+- Without Docker, run `python -m scripts.solaredge_poll` from any scheduler (cron, a systemd
+  timer) every 30 minutes, with the credentials in the environment or in
+  `OMNIMETER_CREDENTIALS_DIR` as files named after the variables.
+
 ## Settings
 
 PV kWp rating and the Costs rate schedule are entered via the **Settings** tab in the UI
 (or `POST /api/settings/pv` / `/api/settings/rates` / `/api/settings/gas-rates`).
 The Self-Sufficiency and Costs pages stay in an explicit "not available yet"
-state until these are populated — no page silently shows a wrong number.
+state until these are populated — no page silently shows a wrong number. Where an inverter
+feed supplies measured production, Self-Sufficiency does not need the kWp rating at all; the
+rating is then only the fallback for days without a measurement.
+
+**Solar production source.** Every solar figure is labelled `measured` (read from the inverter),
+`estimated` (modelled from the kWp rating), or `partly estimated` (a range that mixes both). The
+API carries the basis per day (`basis`: `measured` | `weather` | `seasonal`) and a range-level
+`production_source`. Today's measured figure is "so far" (flagged `partial`), not a projection.
+Self-sufficiency accounts for the battery: stored energy is not counted as consumed, and battery
+output counts as self-supplied only in proportion to how much of what charged it came from solar
+(charging takes solar surplus first, the grid only for the remainder).
 
 **Bulk rate import, under Import → Tariffs, instead of typing periods in one at a time.**
 Upload a PDF and OmniMeter auto-detects the format — no supplier picker, and the result

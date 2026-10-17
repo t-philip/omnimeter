@@ -235,10 +235,26 @@ Two independent uses of the same daily Open-Meteo fetch (`weather_daily`),
 covering different tabs. Neither adds a second network call — both are
 derived from the one fetch driven by `weather_enabled`.
 
-### 5.1 Solar estimation
+### 5.1 Solar production: measured where available, otherwise estimated
 
-Most inverters aren't reachable locally, so production is **estimated, never
-measured**, and must always be labelled as such.
+Most inverters aren't reachable locally. Where an inverter feed **is** connected (SolarEdge's cloud API is supported: the poller
+reads it into `solaredge_daily`, with the current day taken from the latest cumulative
+`solaredge_overview` snapshot), production is **measured** and used as-is. Where
+it is not, production is **estimated**. Either way the basis is returned per day and must always be
+labelled (`measured` / `estimated` / `partly estimated`) — a measured figure never carries an
+"estimated" tag and an estimate never loses it. The `max(estimate, export)` reconciliation applies
+to estimated days only; it would only mask a real measurement.
+
+**Self-sufficiency** is the share of what the house used that did not come from the grid:
+load = (production − export) + import + discharge − charge. Battery energy is attributed by an
+explicit assumption: charging takes solar surplus first and the grid only for the remainder;
+discharge carries the same origin mix as the charge that filled it (with no charge that day it
+follows that day's solar/grid inputs). With no battery this reduces to
+`1 − import / (import + production − export)`. Import, export and battery always come from their
+own meters; an inverter feed's own grid/storage split is deliberately not added on top (that would
+double count).
+
+#### Estimation (fallback)
 
 - **Default:** an annual figure (`kWp × 950 kWh/kWp/yr`, a typical NL specific
   yield) distributed by a fixed monthly curve. Clamped so the estimate can
@@ -696,8 +712,8 @@ means/stds, which are internal model parameters with no meaning outside
 1. **No automated browser/e2e tests** (§10).
 2. **`mypy` runs at baseline, not strict** — clean, but a weaker guarantee
    than a strict pass.
-3. **Solar production is an estimate**, flat within a month unless weather is
-   enabled, and never a measurement.
+3. **Without an inverter feed, solar production is an estimate**, flat within a month unless
+   weather is enabled, and never a measurement. With one, it is measured.
 4. **Only HomeWizard is zero-configuration.** Other brands work through a
    field map or the vendor-neutral CSV, but you must state your meter's names
    once. The generic HTTP path has been verified end-to-end against a live

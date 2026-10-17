@@ -191,8 +191,13 @@ def meter_data_range(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
     range worth fetching weather over. Nothing is gained by holding weather
     for dates with no consumption to correlate it against."""
     firsts, lasts = [], []
-    for table in ("power_daily", "gas_daily", "water_daily", "battery_daily"):
-        row = conn.execute(f"SELECT MIN(date) AS f, MAX(date) AS l FROM {table}").fetchone()
+    # solaredge_daily (measured PV production from an inverter feed) is also worth correlating weather against, and it
+    # reaches back before the meters do; the table simply doesn't exist on an install without that feed.
+    for table in ("power_daily", "gas_daily", "water_daily", "battery_daily", "solaredge_daily"):
+        try:
+            row = conn.execute(f"SELECT MIN(date) AS f, MAX(date) AS l FROM {table}").fetchone()
+        except sqlite3.OperationalError:
+            continue
         if row and row["f"]:
             firsts.append(row["f"])
             lasts.append(row["l"])

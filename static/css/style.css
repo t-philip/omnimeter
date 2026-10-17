@@ -953,6 +953,23 @@ main {
   margin-left: 8px;
 }
 
+.badge-estimated[hidden],
+.badge-measured[hidden] {
+  display: none;
+}
+
+/* Solar figure measured by the inverter itself (see src/solar_production.py). Same pill as
+   .badge-estimated, different colour so measured vs estimated reads at a glance. */
+.badge-measured {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--series-power-export);
+  border: 1px solid var(--series-power-export);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 8px;
+}
+
 .empty-state {
   color: var(--text-muted);
   font-size: 0.9rem;

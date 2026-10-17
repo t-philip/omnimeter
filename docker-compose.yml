@@ -91,6 +91,43 @@ services:
       - ./data:/opt/omnimeter/data
     restart: unless-stopped
 
+  # Optional SolarEdge poller (measured PV production). Does nothing until the
+  # "SolarEdge production" toggle is on in Settings, so it is safe to always run --
+  # same reasoning as health-check/anomaly above. See the README's "SolarEdge"
+  # section for the one-time authorisation it needs first.
+  solaredge:
+    build: .
+    command: sh -c "while true; do python -m scripts.solaredge_poll; sleep 1800; done"
+    env_file: .env
+    volumes:
+      - ./data:/opt/omnimeter/data
+    restart: unless-stopped
+
+  # One-off tools for the SolarEdge setup; never started by `up` (profile "tools").
+  #   docker compose run --rm --service-ports solaredge-authorize
+  #   docker compose run --rm solaredge-backfill --dry-run
+  # The authorisation listener must bind inside the container, but the port is
+  # published on the host's loopback only -- never on a LAN-reachable address.
+  solaredge-authorize:
+    build: .
+    profiles: ["tools"]
+    command: python -m scripts.solaredge_authorize
+    env_file: .env
+    environment:
+      OMNIMETER_SOLAREDGE_AUTH_BIND: 0.0.0.0
+    ports:
+      - "127.0.0.1:8888:8888"
+    volumes:
+      - ./data:/opt/omnimeter/data
+
+  solaredge-backfill:
+    build: .
+    profiles: ["tools"]
+    entrypoint: ["python", "-m", "scripts.solaredge_backfill"]
+    env_file: .env
+    volumes:
+      - ./data:/opt/omnimeter/data
+
   # One-off: `docker compose run --rm setup`. Never started by `up`.
   #
   # Runs as root (unlike every other service here, which stays on the

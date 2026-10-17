@@ -47,10 +47,12 @@ fail=0
 # always flag itself. Reviewed as code, not scanned as prose.
 SELF_EXCLUDE=':(exclude)scripts/check_privacy.sh'
 
-case "$MODE" in
-    --all)    ADDED=$(git ls-files -- '*.py' '*.md' '*.js' '*.html' '*.yml' '*.json' '*.sh' '*.css' \
+compute_added() {  # compute_added [extra pathspec excludes...] -> prints added lines
+    local EXTRA=("$@") ADDED
+    case "$MODE" in
+    --all)    ADDED=$(git ls-files -- '*.py' '*.md' '*.js' '*.html' '*.yml' '*.json' '*.sh' '*.css' "${EXTRA[@]+"${EXTRA[@]}"}" \
                       | grep -v '\.min\.' | xargs -r grep -Hn '' 2>/dev/null) ;;
-    --staged) ADDED=$(git diff --cached -U0 -- . "$SELF_EXCLUDE" | grep '^+' | grep -v '^+++') ;;
+    --staged) ADDED=$(git diff --cached -U0 -- . "$SELF_EXCLUDE" "${EXTRA[@]+"${EXTRA[@]}"}" | grep '^+' | grep -v '^+++') ;;
     *)        # PRIVACY_BASE lets CI name the range it wants checked; locally
               # we compare against the published branch plus the working tree.
               if [ -n "${PRIVACY_BASE:-}" ]; then
@@ -59,10 +61,17 @@ case "$MODE" in
                   git fetch -q origin 2>/dev/null || true
                   base=$(git rev-parse --verify -q origin/main || git rev-parse HEAD)
               fi
-              ADDED=$(git diff -U0 "$base"...HEAD -- . "$SELF_EXCLUDE" 2>/dev/null | grep '^+' | grep -v '^+++'
-                      git diff -U0 -- . "$SELF_EXCLUDE" | grep '^+' | grep -v '^+++'
-                      git diff --cached -U0 -- . "$SELF_EXCLUDE" | grep '^+' | grep -v '^+++') ;;
-esac
+              ADDED=$(git diff -U0 "$base"...HEAD -- . "$SELF_EXCLUDE" "${EXTRA[@]+"${EXTRA[@]}"}" 2>/dev/null | grep '^+' | grep -v '^+++'
+                      git diff -U0 -- . "$SELF_EXCLUDE" "${EXTRA[@]+"${EXTRA[@]}"}" | grep '^+' | grep -v '^+++'
+                      git diff --cached -U0 -- . "$SELF_EXCLUDE" "${EXTRA[@]+"${EXTRA[@]}"}" | grep '^+' | grep -v '^+++') ;;
+    esac
+    printf '%s\n' "$ADDED"
+}
+ADDED=$(compute_added)
+# Front-end code (scripts, templates, styles) is full of user-interface labels and
+# captions that are not data entries. The free-text and quoted-phrase rules
+# below run on the added lines minus those files; every other rule sees all of it.
+ADDED_DATA=$(compute_added ':(exclude)*.js' ':(exclude)*.html' ':(exclude)*.css')
 
 report() {  # report <severity> <label> <pattern> [inverse-filter]
     local sev="$1" label="$2" pat="$3" drop="${4:-__nomatch__}"
@@ -184,7 +193,7 @@ report FAIL "year on a line describing an absence" \
 #
 # Case-SENSITIVE on purpose, and therefore not run through report(), which
 # forces -i: with -i this matches ordinary phrases.
-hits=$(printf '%s\n' "$ADDED" | grep -nE '"[A-Z][a-z]+ [a-z]+( [A-Z]{2})?"' 2>/dev/null \
+hits=$(printf '%s\n' "$ADDED_DATA" | grep -nE '"[A-Z][a-z]+ [a-z]+( [A-Z]{2})?"' 2>/dev/null \
        | grep -viE 'e\.g\.|for example|SELECT|INSERT|UPDATE|CREATE|ALTER|PRAGMA|Content-Type|User-Agent' || true)
 if [ -n "$hits" ]; then
     printf '\n  [FAIL] quoted proper-noun phrase (verbatim log note?)\n'
@@ -230,9 +239,11 @@ report FAIL "absolute date at or after 2002 (outside the fiction window)" \
 # Free-text fields are where a verbatim note from a real database ends up --
 # an occupancy note, a device label, a description. Default them to a
 # placeholder rather than inventing something that reads like a real entry.
+ADDED_ALL=$ADDED; ADDED=$ADDED_DATA
 report FAIL "free-text field with non-placeholder content" \
     '(notes|note|description|comment|label|title)\s*[=:]\s*"[^"]{4,}"' \
     '"Test Data|placeholder|example|e\.g\.|lorem'
+ADDED=$ADDED_ALL
 
 # --- Verdict ----------------------------------------------------------------
 echo

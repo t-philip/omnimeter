@@ -4,7 +4,7 @@ import hmac
 import math
 import os
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, Response, g, jsonify, render_template, request
@@ -17,6 +17,8 @@ from . import (
     localtime,
     quarters,
     runaway_detector,
+    solar_production,
+    solaredge_status,
     tariff_parser,
     telegram_notifier,
     update_check,
@@ -28,7 +30,6 @@ from .ingest_cli import DEFAULT_IMPORTS_DIR
 from .solar_estimate import (
     estimate_daily_production,
     estimate_daily_production_from_radiation,
-    estimate_self_sufficiency,
     reconcile_with_export,
 )
 
@@ -167,6 +168,10 @@ _TOGGLE_FIELDS = (
     # OmniMeter's third outbound internet call (Telegram, see
     # telegram_notifier.py) -- same opt-in reasoning, default 0.
     "anomaly_alerts_enabled",
+    # SolarEdge cloud poller (scripts/solaredge_poll.py) -- an outbound-internet
+    # feature, so opt-in like the others; the column existed but, without this
+    # entry, could only be switched on by editing the database by hand.
+    "solaredge_enabled",
 )
 
 # UI-visibility switches -- deliberately a separate full-replace
@@ -180,6 +185,7 @@ _VISIBILITY_FIELDS = (
     "show_water_tab",
     "show_battery_tab",
     "show_sufficiency_tab",
+    "show_solar_tab",
 )
 
 
@@ -458,6 +464,28 @@ def create_app() -> Flask:
         )
         return {"power": power, "gas": gas, "water": water, "battery": battery}
 
+    # SolarEdge status (read-only; for any external monitoring tool).
+    # Job health, data freshness, the ESTIMATED credit balance and the grant's remaining life --
+    # see src/solaredge_status.py. Exposes no credential, token or site id.
+    def _solaredge_token_path() -> Path:
+        override = os.environ.get("OMNIMETER_SOLAREDGE_TOKEN_FILE")
+        return Path(override) if override else db.resolve_db_path().parent / "solaredge_token.json"
+
+    @app.route("/api/solaredge/status")
+    def api_solaredge_status():
+        reset_day = int(os.environ.get(solaredge_status.RESET_DAY_ENV, solaredge_status.DEFAULT_RESET_DAY))
+        limit = int(os.environ.get(solaredge_status.CREDIT_LIMIT_ENV, solaredge_status.DEFAULT_CREDIT_LIMIT))
+        return jsonify(
+            solaredge_status.build_status(
+                get_conn(), _solaredge_token_path(), datetime.now(UTC), _LOCAL_TZ, reset_day=reset_day, credit_limit=limit
+            )
+        )
+
+    @app.route("/api/solaredge/power")
+    def api_solaredge_power():
+        hours = request.args.get("hours", default=48, type=int)
+        return jsonify(solaredge_status.recent_power(get_conn(), datetime.now(UTC), hours))
+
     @app.route("/api/overview")
     def api_overview():
         conn = get_conn()
@@ -580,16 +608,18 @@ def create_app() -> Flask:
             "battery_daily", ["charge_kwh", "discharge_kwh", "min_soc_pct", "max_soc_pct", "avg_soc_pct"]
         )
 
-    def _estimated_production_by_date(conn, f: str, t: str) -> dict[str, dict] | None:
-        """Per-day estimated solar production for [f, t], each entry carrying
-        the reconciled kWh plus which basis (weather vs seasonal) produced it
-        and the underlying radiation figure if weather-driven. Shared by
-        /api/self-sufficiency and /api/energy-flow so the two can't drift on
-        the estimation method. Returns None if no PV kWp rating is
-        configured (distinct from a configured PV with no power rows in
-        range, which returns {} rather than None)."""
+    def _production_by_date(conn, f: str, t: str) -> dict[str, dict] | None:
+        """Per-day solar production for [f, t]: MEASURED where an inverter feed has the day (SolarEdge,
+        see src/solar_production.py), otherwise ESTIMATED from the panel capacity. Each
+        entry carries the kWh, which ``basis`` produced it ("measured" | "weather" | "seasonal"),
+        whether it is ``partial`` (today, measured so far) and the day's radiation figure when weather
+        is enabled (context for the sun readout, whatever the basis). Shared by /api/self-sufficiency
+        and /api/energy-flow so the two can't drift. Returns None when there is neither a kWp rating
+        nor any measured day in range (distinct from a range with no power rows, which returns {})."""
         pv = conn.execute("SELECT * FROM pv_config WHERE id = 1").fetchone()
-        if pv is None or pv["kwp_rating"] is None:
+        kwp = pv["kwp_rating"] if pv is not None else None
+        measured = solar_production.measured_by_date(conn, f, t, _today_local())
+        if kwp is None and not measured:
             return None
 
         power_rows = conn.execute(
@@ -597,12 +627,10 @@ def create_app() -> Flask:
             (f, t),
         ).fetchall()
 
-        # Prefer measured radiation. Falls back to the
-        # seasonal curve per-day (not per-request) so a range that straddles
-        # the start of weather coverage degrades day by day rather than
-        # discarding the good days. `basis` is returned per day so the UI can
-        # say which one produced the number -- a silently weather-adjusted
-        # estimate is less trustworthy than a visibly labelled one.
+        # Prefer measured radiation for the ESTIMATE, and keep it as context for measured days too. Falls
+        # back to the seasonal curve per-day (not per-request) so a range that straddles the start of
+        # weather coverage degrades day by day rather than discarding the good days. `basis` is returned
+        # per day so the UI can say which one produced the number.
         radiation: dict[str, float] = {}
         reference_annual = None
         if weather.weather_enabled(conn):
@@ -612,80 +640,116 @@ def create_app() -> Flask:
 
         out: dict[str, dict] = {}
         for r in power_rows:
-            day = datetime.strptime(r["date"], "%Y-%m-%d").date()
             rad = radiation.get(r["date"])
+            m = measured.get(r["date"])
+            if m is not None:
+                out[r["date"]] = {"production_kwh": m["kwh"], "basis": "measured", "partial": m["partial"], "radiation_mj": rad}
+                continue
+            if kwp is None:
+                continue  # no measurement and no capacity to estimate from: leave the day out
+            day = datetime.strptime(r["date"], "%Y-%m-%d").date()
             if rad is not None and reference_annual:
-                est_production = estimate_daily_production_from_radiation(
-                    pv["kwp_rating"], rad, reference_annual
-                )
+                est_production = estimate_daily_production_from_radiation(kwp, rad, reference_annual)
                 basis = "weather"
             else:
-                est_production = estimate_daily_production(pv["kwp_rating"], day)
+                est_production = estimate_daily_production(kwp, day)
                 basis = "seasonal"
             est_production = reconcile_with_export(est_production, r["export_kwh"] or 0.0)
-            out[r["date"]] = {
-                "estimated_production_kwh": est_production,
-                "basis": basis,
-                "radiation_mj": rad,
-            }
+            out[r["date"]] = {"production_kwh": est_production, "basis": basis, "partial": False, "radiation_mj": rad}
         return out
+
+    def _day_flow(prod_kwh: float, power_row, batt) -> dict:
+        """One day's energy_flow_matrix with the battery included (zeros before battery data exists)."""
+        return aggregate.energy_flow_matrix(
+            solar_kwh=prod_kwh,
+            discharge_kwh=(batt["discharge_kwh"] if batt else 0.0) or 0.0,
+            import_kwh=power_row["import_kwh"] or 0.0,
+            charge_kwh=(batt["charge_kwh"] if batt else 0.0) or 0.0,
+            export_kwh=power_row["export_kwh"] or 0.0,
+        )
+
+    def _battery_by_date(conn, f: str, t: str) -> dict:
+        return {
+            r["date"]: r
+            for r in conn.execute(
+                "SELECT date, charge_kwh, discharge_kwh FROM battery_daily WHERE date >= ? AND date <= ?", (f, t)
+            ).fetchall()
+        }
 
     @app.route("/api/self-sufficiency")
     def api_self_sufficiency():
         conn = get_conn()
         f, t = date_range_args()
-        est_by_date = _estimated_production_by_date(conn, f, t)
-        if est_by_date is None:
-            return jsonify({"available": False, "reason": "No PV kWp rating configured yet."})
+        prod_by_date = _production_by_date(conn, f, t)
+        if prod_by_date is None:
+            return jsonify(
+                {
+                    "available": False,
+                    "reason": "No solar data yet: connect an inverter feed, "
+                    "or add your PV kWp rating under Settings.",
+                }
+            )
 
         power_rows = conn.execute(
             "SELECT date, import_kwh, export_kwh FROM power_daily WHERE date >= ? AND date <= ? ORDER BY date",
             (f, t),
         ).fetchall()
+        battery_by_date = _battery_by_date(conn, f, t)
 
         results = []
         for r in power_rows:
-            est = est_by_date[r["date"]]
-            sufficiency = estimate_self_sufficiency(
-                est["estimated_production_kwh"], r["export_kwh"] or 0.0, r["import_kwh"] or 0.0
+            prod = prod_by_date.get(r["date"])
+            if prod is None:
+                continue
+            batt = battery_by_date.get(r["date"])
+            sufficiency = solar_production.self_sufficiency(
+                prod["production_kwh"],
+                r["export_kwh"] or 0.0,
+                r["import_kwh"] or 0.0,
+                (batt["charge_kwh"] if batt else 0.0) or 0.0,
+                (batt["discharge_kwh"] if batt else 0.0) or 0.0,
             )
             results.append(
                 {
                     "date": r["date"],
-                    "estimated_production_kwh": round(est["estimated_production_kwh"], 2),
+                    "production_kwh": round(prod["production_kwh"], 2),
                     "import_kwh": r["import_kwh"],
                     "export_kwh": r["export_kwh"],
                     "self_sufficiency_pct": round(sufficiency * 100, 1) if sufficiency is not None else None,
-                    "basis": est["basis"],
-                    "radiation_mj": round(est["radiation_mj"], 2) if est["radiation_mj"] is not None else None,
+                    "basis": prod["basis"],
+                    "partial": prod["partial"],
+                    "radiation_mj": round(prod["radiation_mj"], 2) if prod["radiation_mj"] is not None else None,
                 }
             )
+        source = solar_production.production_source(results)
         weather_days = sum(1 for r in results if r["basis"] == "weather")
+        radiation_days = sum(1 for r in results if r["radiation_mj"] is not None)
         today_in_progress = any(r["date"] == _today_local() for r in results)
 
-        # How sunny this period actually was, against what that same slice of
-        # the calendar normally gets. Compared date-for-date rather than as a
-        # flat average, so a range spanning a season boundary is still judged
-        # against the right reference for each of its days.
+        # How sunny this period actually was, against what that same slice of the calendar normally gets.
+        # Compared date-for-date rather than as a flat average, so a range spanning a season boundary is
+        # still judged against the right reference for each of its days. Works whatever the production
+        # basis: the sun readout is context, not part of the estimate.
         sun_pct = None
-        if weather_days:
+        if radiation_days:
             typical = weather.typical_radiation_by_day_of_year(conn)
             actual_sum = sum(r["radiation_mj"] for r in results if r["radiation_mj"] is not None)
-            typical_sum = sum(
-                typical.get(r["date"][5:], 0.0) for r in results if r["radiation_mj"] is not None
-            )
+            typical_sum = sum(typical.get(r["date"][5:], 0.0) for r in results if r["radiation_mj"] is not None)
             if typical_sum > 0:
                 sun_pct = round(actual_sum / typical_sum * 100, 0)
         return jsonify(
             {
                 "available": True,
-                "estimated": True,
+                "production_source": source,
+                "estimated": source != "measured",
+                "measured_days": sum(1 for r in results if r["basis"] == "measured"),
+                "estimated_days": sum(1 for r in results if r["basis"] != "measured"),
                 "days": results,
-                # Attribution is a CC BY 4.0 obligation wherever these values
-                # are displayed, cached ones included -- surfaced here so the
-                # frontend cannot render weather-derived figures without it.
-                "weather_attribution": weather.ATTRIBUTION if weather_days else None,
+                # Attribution is a CC BY 4.0 obligation wherever weather-derived values are displayed,
+                # cached ones included -- surfaced here so the frontend cannot render them without it.
+                "weather_attribution": weather.ATTRIBUTION if radiation_days else None,
                 "weather_days": weather_days,
+                "radiation_days": radiation_days,
                 "sun_pct_of_typical": sun_pct,
                 "today_in_progress": today_in_progress,
             }
@@ -693,20 +757,16 @@ def create_app() -> Flask:
 
     @app.route("/api/energy-flow")
     def api_energy_flow():
-        # Overview's proportional Sankey-style visual, in
-        # addition to the existing simplified renderEnergyFlow() diagram.
-        # Reuses the same solar-estimate path as /api/self-sufficiency
-        # (_estimated_production_by_date) so the two can't drift.
+        # Overview's proportional Sankey-style visual, in addition to the existing simplified
+        # renderEnergyFlow() diagram. Reuses the same production path as /api/self-sufficiency
+        # (_production_by_date) so the two can't drift.
         #
-        # The merit-order allocation runs once PER DAY, not once on period
-        # totals -- computing it on
-        # totals is wrong, not just less precise: a whole period's solar and
-        # battery discharge can get fully absorbed by Load in one pass before
-        # either has anything left for Grid out, forcing genuinely-exported
-        # power through the grid-in-to-grid-out fallback pair instead. Per
-        # day, each day's own solar/battery/grid balance stays intact, so a
-        # sunny day's real export is attributed to solar on that day. See
-        # sum_energy_flow_matrices() for the merge.
+        # The merit-order allocation runs once PER DAY, not once on period totals -- computing it on
+        # totals is wrong, not just less precise: a whole
+        # period's solar and battery discharge can get fully absorbed by Load in one pass before either
+        # has anything left for Grid out, forcing genuinely-exported power through the grid-in-to-grid-out
+        # fallback pair instead. Per day, each day's own solar/battery/grid balance stays intact, so a
+        # sunny day's real export is attributed to solar on that day. See sum_energy_flow_matrices().
         conn = get_conn()
         f, t = date_range_args()
 
@@ -714,45 +774,112 @@ def create_app() -> Flask:
             "SELECT date, import_kwh, export_kwh FROM power_daily WHERE date >= ? AND date <= ? ORDER BY date",
             (f, t),
         ).fetchall()
-        battery_by_date = {
-            r["date"]: r
-            for r in conn.execute(
-                "SELECT date, charge_kwh, discharge_kwh FROM battery_daily WHERE date >= ? AND date <= ?",
-                (f, t),
-            ).fetchall()
-        }
+        battery_by_date = _battery_by_date(conn, f, t)
 
-        est_by_date = _estimated_production_by_date(conn, f, t)
-        pv_configured = est_by_date is not None
+        prod_by_date = _production_by_date(conn, f, t)
+        pv_configured = prod_by_date is not None
 
         daily_matrices = []
+        shown = []
         for r in power_rows:
-            est = est_by_date.get(r["date"]) if est_by_date else None
-            batt = battery_by_date.get(r["date"])
-            daily_matrices.append(
-                aggregate.energy_flow_matrix(
-                    solar_kwh=est["estimated_production_kwh"] if est else 0.0,
-                    discharge_kwh=(batt["discharge_kwh"] if batt else 0.0) or 0.0,
-                    import_kwh=r["import_kwh"] or 0.0,
-                    charge_kwh=(batt["charge_kwh"] if batt else 0.0) or 0.0,
-                    export_kwh=r["export_kwh"] or 0.0,
-                )
-            )
+            prod = prod_by_date.get(r["date"]) if prod_by_date else None
+            if prod is not None:
+                shown.append({"basis": prod["basis"]})
+            daily_matrices.append(_day_flow(prod["production_kwh"] if prod else 0.0, r, battery_by_date.get(r["date"])))
 
         matrix = aggregate.sum_energy_flow_matrices(daily_matrices)
         matrix["pv_configured"] = pv_configured
+        matrix["production_source"] = solar_production.production_source(shown)
         matrix["today_in_progress"] = any(r["date"] == _today_local() for r in power_rows)
         if not daily_matrices:
-            # sum_energy_flow_matrices([]) omits sources/uses keys entirely
-            # (nothing to sum) -- the frontend expects the full shape even
-            # for an empty range, so fill in the zeros here.
+            # sum_energy_flow_matrices([]) omits sources/uses keys entirely (nothing to sum) -- the
+            # frontend expects the full shape even for an empty range, so fill in the zeros here.
             matrix["sources"] = {"solar": 0.0, "battery_discharge": 0.0, "grid_in": 0.0}
             matrix["uses"] = {"load": 0.0, "battery_charge": 0.0, "grid_out": 0.0}
-        # Weather attribution isn't needed here even when the solar figure is
-        # weather-driven -- Self-Sufficiency already carries the CC BY 4.0
-        # credit for the same underlying estimate, and this view doesn't
-        # expose the radiation figure itself, only the resulting kWh.
+        # Weather attribution isn't needed here -- Self-Sufficiency already carries the CC BY 4.0 credit
+        # for the radiation context, and this view doesn't expose the radiation figure itself.
         return jsonify(matrix)
+
+    @app.route("/api/solar/summary")
+    def api_solar_summary():
+        """Solar tab: daily production for [from, to] plus headline stats and the previous period for comparison.
+        Measured days (inverter feed) are used when the range has any; otherwise the kWp estimate, labelled as such.
+        Unlike Self-Sufficiency this does not need grid-meter rows, so it reaches back as far as the inverter history."""
+        conn = get_conn()
+        f, t = date_range_args()
+        today = _today_local()
+        pv = conn.execute("SELECT kwp_rating FROM pv_config WHERE id = 1").fetchone()
+        kwp = pv["kwp_rating"] if pv is not None else None
+
+        measured = solar_production.measured_by_date(conn, f, t, today)
+        if measured:
+            days = [
+                {"date": d, "kwh": round(v["kwh"], 3), "partial": v["partial"], "basis": "measured"}
+                for d, v in sorted(measured.items())
+            ]
+            source = "measured"
+        else:
+            est = _production_by_date(conn, f, t)
+            if est is None:
+                reason = "No solar data yet: connect an inverter feed, or add your PV kWp rating under Settings."
+                return jsonify({"available": False, "reason": reason})
+            days = [
+                {"date": d, "kwh": round(v["production_kwh"], 3), "partial": False, "basis": v["basis"]}
+                for d, v in sorted(est.items())
+            ]
+            source = solar_production.production_source(days)
+
+        export_by_date = {
+            r["date"]: r["export_kwh"] or 0.0
+            for r in conn.execute("SELECT date, export_kwh FROM power_daily WHERE date >= ? AND date <= ?", (f, t)).fetchall()
+        }
+        stats = solar_production.period_stats(days, kwp, export_by_date)
+
+        # Previous period of the same length, for "vs previous". Only offered when it has comparable coverage.
+        prior = None
+        try:
+            d_from, d_to = date.fromisoformat(f), date.fromisoformat(t)
+            span = (d_to - d_from).days + 1
+            p_to = d_from - timedelta(days=1)
+            p_from = p_to - timedelta(days=span - 1)
+            prior_days = solar_production.measured_by_date(conn, p_from.isoformat(), p_to.isoformat(), today)
+            prior_total = sum(v["kwh"] for v in prior_days.values())
+            if source == "measured" and len(prior_days) >= 0.8 * span and prior_total > 0:
+                prior = {
+                    "from": p_from.isoformat(),
+                    "to": p_to.isoformat(),
+                    "total_kwh": round(prior_total, 2),
+                    "delta_pct": round((stats["total_kwh"] / prior_total - 1) * 100, 1),
+                }
+        except ValueError:
+            prior = None
+
+        return jsonify(
+            {
+                "available": True,
+                "production_source": source,
+                "kwp": kwp,
+                "days": days,
+                "stats": stats,
+                "prior": prior,
+                "today_in_progress": any(d["date"] == today for d in days),
+            }
+        )
+
+    @app.route("/api/solar/history")
+    def api_solar_history():
+        """Solar tab: all-time monthly totals by year (year-over-year comparison) and annual totals."""
+        conn = get_conn()
+        data = solar_production.monthly_history(conn)
+        pv = conn.execute("SELECT kwp_rating FROM pv_config WHERE id = 1").fetchone()
+        data["kwp"] = pv["kwp_rating"] if pv is not None else None
+        if data.get("available"):
+            weather_by_year = solar_production.yearly_weather(conn)
+            data["annual"] = solar_production.annual_insights(
+                data["annual"], weather_by_year, data["kwp"], datetime.now(_LOCAL_TZ).year
+            )
+            data["weather_attribution"] = weather.ATTRIBUTION if weather_by_year else None
+        return jsonify(data)
 
     @app.route("/api/costs")
     def api_costs():

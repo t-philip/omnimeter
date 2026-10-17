@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS feature_toggles (
     show_water_tab INTEGER NOT NULL DEFAULT 1,
     show_battery_tab INTEGER NOT NULL DEFAULT 1,
     show_sufficiency_tab INTEGER NOT NULL DEFAULT 1,
+    show_solar_tab INTEGER NOT NULL DEFAULT 1,
     -- OmniMeter's first outbound internet call. Defaults
     -- to 0 so a self-hosting user opts in knowingly rather than
     -- discovering afterwards that the box talks to the internet and that
@@ -152,9 +153,67 @@ CREATE TABLE IF NOT EXISTS feature_toggles (
     -- OmniMeter's second outbound internet call (a GitHub releases lookup,
     -- see src/update_check.py) -- same opt-in reasoning as weather_enabled
     -- above, defaults to 0 for the same reason.
-    update_check_enabled INTEGER NOT NULL DEFAULT 0
+    update_check_enabled INTEGER NOT NULL DEFAULT 0,
+    -- SolarEdge cloud poller (src/solaredge_ingest.py). Opt-in like the
+    -- other outbound-internet features: an already-deployed DB must not start
+    -- calling SolarEdge on upgrade.
+    solaredge_enabled INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO feature_toggles (id) VALUES (1);
+
+-- SolarEdge Monitoring API V2. `solaredge_overview` holds one
+-- snapshot per poll of the site's cumulative-since-local-midnight totals, so a
+-- day's figure is exact whenever it is read and the interval only sets the
+-- intraday resolution. `solaredge_power` holds the 15-minute PV production
+-- buckets (watts) the time-series endpoint returns, keyed by bucket start in
+-- UTC so a re-fetch of an overlapping window is an idempotent upsert.
+-- Consumption columns are NULL on a site with no consumption meter.
+CREATE TABLE IF NOT EXISTS solaredge_overview (
+    time TEXT PRIMARY KEY,
+    day TEXT NOT NULL,
+    production_wh REAL,
+    to_self_wh REAL,
+    to_storage_wh REAL,
+    to_grid_wh REAL,
+    consumption_wh REAL,
+    from_pv_wh REAL,
+    from_storage_wh REAL,
+    from_grid_wh REAL
+);
+
+CREATE TABLE IF NOT EXISTS solaredge_power (
+    time TEXT PRIMARY KEY,
+    power_w REAL NOT NULL
+);
+
+-- Authoritative daily PV production from SolarEdge's /energy (DAY resolution), keyed by the
+-- site-local date. Filled once by scripts/solaredge_backfill.py (history back to the install
+-- date) and then topped up by the poller (one call per day finalises yesterday). Today is NOT
+-- here: it is only known as the latest cumulative `solaredge_overview` snapshot.
+CREATE TABLE IF NOT EXISTS solaredge_daily (
+    date TEXT PRIMARY KEY,
+    production_wh REAL NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+
+-- One row per poller run (any outcome), so job health and the monthly API-call
+-- tally can be shown. SolarEdge exposes no credit-balance header, so the
+-- balance is estimated from `calls` (every HTTP request the client sent).
+-- status: ok | skipped_night | auth_error | rate_limited | api_error
+CREATE TABLE IF NOT EXISTS solaredge_runs (
+    time TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    calls INTEGER NOT NULL DEFAULT 0,
+    detail TEXT  -- JSON {endpoint: calls}; NULL on rows written before this column existed
+);
+
+-- One row per site-local day on which the daily top-up already asked SolarEdge to fill a gap. A day with no
+-- value (the inverter was offline from the cloud) stays absent from solaredge_daily, so without this the
+-- top-up would re-ask on EVERY 30-minute run -- one wasted credit each -- until data finally arrived.
+CREATE TABLE IF NOT EXISTS solaredge_gap_attempts (
+    date TEXT PRIMARY KEY,
+    attempted_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS power_daily (
     date TEXT PRIMARY KEY,
@@ -482,7 +541,7 @@ def _migrate_add_visibility_toggles(conn: sqlite3.Connection) -> None:
     behavior exactly for an already-deployed DB, same reasoning as the
     table's own DEFAULT."""
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(feature_toggles)")}
-    for col in ("show_gas_tab", "show_water_tab", "show_battery_tab", "show_sufficiency_tab"):
+    for col in ("show_gas_tab", "show_water_tab", "show_battery_tab", "show_sufficiency_tab", "show_solar_tab"):
         if col not in existing:
             conn.execute(f"ALTER TABLE feature_toggles ADD COLUMN {col} INTEGER NOT NULL DEFAULT 1")
     # Default 0, not 1 -- see the column comment in SCHEMA. An
@@ -514,6 +573,22 @@ def _migrate_add_anomaly_toggle(conn: sqlite3.Connection) -> None:
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(feature_toggles)")}
     if "anomaly_alerts_enabled" not in existing:
         conn.execute("ALTER TABLE feature_toggles ADD COLUMN anomaly_alerts_enabled INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrate_add_solaredge_toggle(conn: sqlite3.Connection) -> None:
+    """solaredge_enabled is new -- add it to any DB created before the SolarEdge
+    poller. Default 0: an already-deployed DB must not start calling out."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(feature_toggles)")}
+    if "solaredge_enabled" not in existing:
+        conn.execute("ALTER TABLE feature_toggles ADD COLUMN solaredge_enabled INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrate_add_solaredge_run_detail(conn: sqlite3.Connection) -> None:
+    """solaredge_runs.detail (per-endpoint call counts) is new. Nullable, no default: rows written
+    before it existed simply have no breakdown, and saying otherwise would be a guess."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(solaredge_runs)")}
+    if existing and "detail" not in existing:
+        _add_column_once(conn, "ALTER TABLE solaredge_runs ADD COLUMN detail TEXT")
 
 
 def _add_column_once(conn: sqlite3.Connection, ddl: str) -> None:
@@ -589,6 +664,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_add_visibility_toggles(conn)
     _migrate_add_update_check_toggle(conn)
     _migrate_add_anomaly_toggle(conn)
+    _migrate_add_solaredge_toggle(conn)
+    _migrate_add_solaredge_run_detail(conn)
     _migrate_add_fired_via(conn)
     _migrate_add_gate_config(conn)
     conn.commit()
